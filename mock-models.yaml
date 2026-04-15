@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-model
+  labels:
+    model.aibrix.ai/name: "my-model"
+spec:
+  ports:
+  - port: 8000
+    targetPort: 8000
+  selector:
+    model.aibrix.ai/name: "my-model"
+---
+# Pod 1: Handles "coding"
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-model-coding
+  labels:
+    model.aibrix.ai/name: "my-model"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mock-model-coding
+  template:
+    metadata:
+      labels:
+        app: mock-model-coding
+        model.aibrix.ai/name: "my-model"
+        aibrix.ai/semantic-route: "coding"
+    spec:
+      containers:
+      - name: server
+        image: aibrix/vllm-mock:nightly
+        ports:
+        - containerPort: 8000
+---
+# Pod 2: Handles "general"
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-model-general
+  labels:
+    model.aibrix.ai/name: "my-model"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mock-model-general
+  template:
+    metadata:
+      labels:
+        app: mock-model-general
+        model.aibrix.ai/name: "my-model"
+        aibrix.ai/semantic-route: "general"
+    spec:
+      containers:
+      - name: server
+        image: aibrix/vllm-mock:nightly
+        ports:
+        - containerPort: 8000
