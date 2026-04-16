@@ -63,6 +63,8 @@ func (s *Server) HandleRequestHeaders(ctx context.Context, requestID string, req
 			reqHeaders[n.Key] = string(n.RawValue)
 		case HeaderRoutingStrategy:
 			reqHeaders[n.Key] = string(n.RawValue)
+		case HeaderSemanticDecision:
+			reqHeaders[n.Key] = string(n.RawValue)
 		case HeaderConfigProfile:
 			reqConfigProfile = strings.TrimSpace(string(n.RawValue))
 		}
