@@ -6,10 +6,9 @@ import (
 	"math/rand"
 
 	"github.com/vllm-project/aibrix/pkg/constants"
+	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic"
 	"github.com/vllm-project/aibrix/pkg/types"
 	"github.com/vllm-project/aibrix/pkg/utils"
-	srconfig "github.com/vllm-project/semantic-router/src/semantic-router/pkg/config"
-	"github.com/vllm-project/semantic-router/src/semantic-router/pkg/selection"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 )
@@ -27,8 +26,8 @@ func init() {
 type semanticRouter struct{}
 
 func NewSemanticRouter() (types.Router, error) {
-	cfg := selection.DefaultModelSelectionConfig()
-	selection.Initialize(cfg, nil, nil, nil)
+	cfg := semantic.DefaultModelSelectionConfig()
+	semantic.Initialize(cfg, nil, nil, nil)
 	return &semanticRouter{}, nil
 }
 
@@ -45,13 +44,12 @@ func (r *semanticRouter) Route(ctx *types.RoutingContext, readyPodList types.Pod
 	}
 
 	method := r.resolveSelectionMethod(ctx)
-	selector := selection.GetSelector(method)
+	selector := semantic.GetSelector(method)
 
-	selCtx := &selection.SelectionContext{
+	selCtx := &semantic.SelectionContext{
 		Query:           ctx.Message,
 		CandidateModels: candidateModels,
 		DecisionName:    r.getDecisionName(ctx),
-		UserID:          r.getUserID(ctx),
 	}
 
 	result, err := selector.Select(ctx.Context, selCtx)
@@ -82,8 +80,8 @@ func (r *semanticRouter) Route(ctx *types.RoutingContext, readyPodList types.Pod
 	return ctx.TargetAddress(), nil
 }
 
-func (r *semanticRouter) groupPodsByModel(pods []*v1.Pod) ([]srconfig.ModelRef, map[string][]*v1.Pod) {
-	var candidateModels []srconfig.ModelRef
+func (r *semanticRouter) groupPodsByModel(pods []*v1.Pod) ([]semantic.ModelRef, map[string][]*v1.Pod) {
+	var candidateModels []semantic.ModelRef
 	modelToPods := make(map[string][]*v1.Pod)
 
 	for _, pod := range pods {
@@ -93,7 +91,7 @@ func (r *semanticRouter) groupPodsByModel(pods []*v1.Pod) ([]srconfig.ModelRef, 
 		}
 
 		if _, exists := modelToPods[model]; !exists {
-			candidateModels = append(candidateModels, srconfig.ModelRef{Model: model})
+			candidateModels = append(candidateModels, semantic.ModelRef{Model: model})
 		}
 		modelToPods[model] = append(modelToPods[model], pod)
 	}
@@ -110,8 +108,8 @@ func (r *semanticRouter) getModelNameFromPod(pod *v1.Pod) string {
 	return pod.Labels[SemanticRouteLabel]
 }
 
-func (r *semanticRouter) resolveSelectionMethod(ctx *types.RoutingContext) selection.SelectionMethod {
-	method := selection.MethodStatic
+func (r *semanticRouter) resolveSelectionMethod(ctx *types.RoutingContext) semantic.SelectionMethod {
+	method := semantic.MethodStatic
 	if ctx.ConfigProfile == nil || len(ctx.ConfigProfile.RoutingConfig) == 0 {
 		return method
 	}
@@ -120,7 +118,7 @@ func (r *semanticRouter) resolveSelectionMethod(ctx *types.RoutingContext) selec
 		Method string `json:"method"`
 	}
 	if err := json.Unmarshal(ctx.ConfigProfile.RoutingConfig, &cfg); err == nil && cfg.Method != "" {
-		method = selection.SelectionMethod(cfg.Method)
+		method = semantic.SelectionMethod(cfg.Method)
 	}
 	return method
 }
