@@ -31,7 +31,16 @@ func (r *semanticRouter) Route(ctx *types.RoutingContext, readyPodList types.Pod
 		return "", fmt.Errorf("no ready pods available")
 	}
 
-	klog.V(4).InfoS("Executing semantic routing logic", "request_id", ctx.RequestID)
+	reqPrompt := ctx.Message
+	reqModel := ctx.Model
+	// reqBody := ctx.ReqBody
+	// reqHeaders := ctx.ReqHeaders
+	// reqUser := ctx.User
+
+	klog.V(4).InfoS("Analyzing request for semantic routing",
+		"request_id", ctx.RequestID,
+		"model", reqModel,
+		"prompt_length", len(reqPrompt))
 
 	return r.fallback(ctx, pods)
 }
