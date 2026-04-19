@@ -11,8 +11,6 @@ import (
 	"sync/atomic"
 
 	"gopkg.in/yaml.v2"
-
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 var (
@@ -53,23 +51,11 @@ func Parse(configPath string) (*RouterConfig, error) {
 	if resolved == "" {
 		resolved = configPath
 	}
-	logging.ComponentDebugEvent("config", "config_parse_started", map[string]interface{}{
-		"path":     configPath,
-		"resolved": resolved,
-	})
 
 	data, err := os.ReadFile(resolved)
 	if err != nil {
-		logging.ComponentDebugEvent("config", "config_read_failed", map[string]interface{}{
-			"resolved": resolved,
-			"error":    err.Error(),
-		})
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
-	logging.ComponentDebugEvent("config", "config_read_complete", map[string]interface{}{
-		"resolved":   resolved,
-		"size_bytes": len(data),
-	})
 
 	return parseYAMLBytesWithBaseDir(data, filepath.Dir(resolved))
 }
@@ -105,23 +91,12 @@ func parseYAMLBytesWithBaseDir(data []byte, baseDir string) (*RouterConfig, erro
 		return nil, err
 	}
 	cfg.ConfigBaseDir = baseDir
-	if err := finalizeParsedConfig(cfg); err != nil {
-		return nil, err
-	}
-
-	logging.ComponentDebugEvent("config", "config_parse_complete", map[string]interface{}{
-		"decision_count": len(cfg.Decisions),
-		"base_dir":       baseDir,
-	})
-	return cfg, nil
+	return cfg, finalizeParsedConfig(cfg)
 }
 
 func parseRawConfigMap(data []byte) (map[string]interface{}, error) {
 	var raw map[string]interface{}
 	if unmarshalErr := yaml.Unmarshal(data, &raw); unmarshalErr != nil {
-		logging.ComponentDebugEvent("config", "config_yaml_map_parse_failed", map[string]interface{}{
-			"error": unmarshalErr.Error(),
-		})
 		return nil, fmt.Errorf("failed to parse config file: %w", unmarshalErr)
 	}
 	return raw, nil
@@ -206,9 +181,6 @@ func parseRouterConfigPayload(data []byte, raw map[string]interface{}) (*RouterC
 func parseCanonicalConfigPayload(data []byte, raw map[string]interface{}) (*RouterConfig, error) {
 	canonical := &CanonicalConfig{}
 	if unmarshalErr := yaml.Unmarshal(data, canonical); unmarshalErr != nil {
-		logging.ComponentDebugEvent("config", "config_canonical_parse_failed", map[string]interface{}{
-			"error": unmarshalErr.Error(),
-		})
 		return nil, fmt.Errorf("failed to parse canonical config file: %w", unmarshalErr)
 	}
 	if err := attachCanonicalGlobalOverride(raw, canonical); err != nil {
@@ -217,9 +189,6 @@ func parseCanonicalConfigPayload(data []byte, raw map[string]interface{}) (*Rout
 
 	cfg, err := normalizeCanonicalConfig(canonical)
 	if err != nil {
-		logging.ComponentDebugEvent("config", "config_normalize_failed", map[string]interface{}{
-			"error": err.Error(),
-		})
 		return nil, err
 	}
 	return cfg, nil
@@ -252,8 +221,6 @@ func canonicalConfigRequiredError(raw map[string]interface{}) error {
 }
 
 func finalizeParsedConfig(cfg *RouterConfig) error {
-	logParsedDecisions(cfg)
-
 	// Apply default model registry if not specified in config.
 	// If user specifies mom_registry in config.yaml, it completely replaces the defaults.
 	if len(cfg.MoMRegistry) == 0 {
@@ -262,24 +229,7 @@ func finalizeParsedConfig(cfg *RouterConfig) error {
 	if cfg.VectorStore != nil {
 		cfg.VectorStore.ApplyDefaults()
 	}
-	if err := validateConfigStructure(cfg); err != nil {
-		logging.ComponentDebugEvent("config", "config_validation_failed", map[string]interface{}{
-			"error": err.Error(),
-		})
-		return err
-	}
-	return nil
-}
-
-func logParsedDecisions(cfg *RouterConfig) {
-	decisionNames := make([]string, 0, len(cfg.Decisions))
-	for _, d := range cfg.Decisions {
-		decisionNames = append(decisionNames, d.Name)
-	}
-	logging.ComponentDebugEvent("config", "config_decisions_parsed", map[string]interface{}{
-		"decision_count": len(cfg.Decisions),
-		"decision_names": decisionNames,
-	})
+	return validateConfigStructure(cfg)
 }
 
 func deprecatedUserConfigFields(raw map[string]interface{}) []string {
@@ -417,15 +367,6 @@ func nestedStringMap(raw interface{}) map[string]interface{} {
 
 // Replace replaces the globally cached config. It is safe for concurrent readers.
 func Replace(newCfg *RouterConfig) {
-	decisionNames := make([]string, 0, len(newCfg.Decisions))
-	for _, d := range newCfg.Decisions {
-		decisionNames = append(decisionNames, d.Name)
-	}
-	logging.ComponentDebugEvent("config", "config_replace_started", map[string]interface{}{
-		"decision_count": len(newCfg.Decisions),
-		"decision_names": decisionNames,
-	})
-
 	configMu.Lock()
 	config = newCfg
 	configErr = nil
@@ -440,22 +381,12 @@ func Replace(newCfg *RouterConfig) {
 	configUpdateMu.Unlock()
 
 	if len(subscribers) == 0 {
-		logging.ComponentDebugEvent("config", "config_update_listener_missing", nil)
 		return
 	}
-	for id, ch := range subscribers {
+	for _, ch := range subscribers {
 		select {
 		case ch <- newCfg:
-			logging.ComponentDebugEvent("config", "config_update_notified", map[string]interface{}{
-				"subscriber_id":  id,
-				"decision_count": len(newCfg.Decisions),
-			})
 		default:
-			logging.ComponentWarnEvent("config", "config_update_notification_skipped", map[string]interface{}{
-				"subscriber_id":  id,
-				"reason":         "channel_full",
-				"decision_count": len(newCfg.Decisions),
-			})
 		}
 	}
 }

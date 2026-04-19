@@ -3,8 +3,6 @@ package config
 import (
 	"fmt"
 	"strings"
-
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 func validateDecisionContracts(cfg *RouterConfig) error {
@@ -145,10 +143,6 @@ func validateDecisionRAGAndMemoryPlugins(cfg *RouterConfig, decision *Decision) 
 		memActive = memCfg == nil
 	}
 	if cacheActive && (ragActive || memActive) {
-		logging.Warnf("Decision '%s': semantic-cache is enabled alongside %s. "+
-			"Cache reads will be automatically bypassed to preserve personalized responses. "+
-			"Cache writes still occur for observability. Remove the cache plugin if this is intentional.",
-			decision.Name, cachePersonalizationConflictDescription(ragActive, memActive))
 	}
 	return nil
 }
@@ -286,15 +280,6 @@ func validateLatencyAwareAlgorithmConfig(cfg *LatencyAwareAlgorithmConfig) error
 	}
 
 	return nil
-}
-
-func warnIncompleteLatencyAwarePercentiles(hasTPOTPercentile bool, hasTTFTPercentile bool) {
-	if hasTPOTPercentile && !hasTTFTPercentile {
-		logging.Warnf("algorithm.latency_aware: only tpot_percentile is set. RECOMMENDED: also set ttft_percentile for comprehensive latency evaluation (user-perceived latency)")
-	}
-	if !hasTPOTPercentile && hasTTFTPercentile {
-		logging.Warnf("algorithm.latency_aware: only ttft_percentile is set. RECOMMENDED: also set tpot_percentile for comprehensive latency evaluation (token generation throughput)")
-	}
 }
 
 func validateLatencyAwarePercentile(name string, value int, enabled bool) error {

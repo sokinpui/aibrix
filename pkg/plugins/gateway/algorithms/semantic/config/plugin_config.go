@@ -1,10 +1,6 @@
 package config
 
-import (
-	"fmt"
-
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
-)
+import "fmt"
 
 // DecisionPlugin represents a plugin configuration for a decision.
 // Type is the plugin identifier; the authoritative supported set is registered in
@@ -215,7 +211,6 @@ func decodeDecisionPlugin[T any](d *Decision, pluginType string, result *T) *T {
 	}
 
 	if err := UnmarshalPluginConfig(plugin.Configuration, result); err != nil {
-		logging.Errorf("Failed to unmarshal %s config: %v", pluginType, err)
 		return nil
 	}
 	return result

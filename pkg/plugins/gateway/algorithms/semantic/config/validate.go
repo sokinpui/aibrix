@@ -4,17 +4,13 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 // WarnUnknownFields logs warnings for YAML keys in raw that don't match any
 // struct tag on targetType. Only field NAMES are validated, not values.
 // Called once at startup after config parsing succeeds.
 func WarnUnknownFields(raw map[string]interface{}, targetType reflect.Type) {
-	for _, w := range collectUnknownFields(raw, targetType) {
-		logging.Warnf("%s", w)
-	}
+	_ = collectUnknownFields(raw, targetType)
 }
 
 // collectUnknownFields returns warning messages without logging them.

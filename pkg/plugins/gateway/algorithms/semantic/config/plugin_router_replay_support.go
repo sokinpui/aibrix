@@ -1,7 +1,5 @@
 package config
 
-import "github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
-
 const (
 	defaultRouterReplayMaxRecords   = 10000
 	defaultRouterReplayMaxBodyBytes = 4096
@@ -50,7 +48,6 @@ func (c *RouterConfig) EffectiveRouterReplayConfigForDecision(decisionName strin
 	}
 
 	if err := UnmarshalPluginConfig(plugin.Configuration, &base); err != nil {
-		logging.Errorf("Failed to unmarshal %s config: %v", DecisionPluginRouterReplay, err)
 		return nil
 	}
 	if !base.Enabled {

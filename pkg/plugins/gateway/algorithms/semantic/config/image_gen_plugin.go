@@ -1,10 +1,6 @@
 package config
 
-import (
-	"fmt"
-
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
-)
+import "fmt"
 
 // ModalityDetectionMethod defines how modality is detected
 const (
@@ -383,7 +379,6 @@ func (d *Decision) GetImageGenConfig() *ImageGenPluginConfig {
 
 	result := &ImageGenPluginConfig{}
 	if err := UnmarshalPluginConfig(plugin.Configuration, result); err != nil {
-		logging.Errorf("Failed to unmarshal image_gen config: %v", err)
 		return nil
 	}
 	return result

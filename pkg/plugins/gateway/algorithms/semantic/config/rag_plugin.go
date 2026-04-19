@@ -1,7 +1,5 @@
 package config
 
-import "github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
-
 // RAGPluginConfig represents configuration for RAG (Retrieval-Augmented Generation) plugin
 type RAGPluginConfig struct {
 	// Enable RAG retrieval for this decision
@@ -65,7 +63,6 @@ func (d *Decision) GetRAGConfig() *RAGPluginConfig {
 
 	result := &RAGPluginConfig{}
 	if err := UnmarshalPluginConfig(plugin.Configuration, result); err != nil {
-		logging.Errorf("Failed to unmarshal RAG config: %v", err)
 		return nil
 	}
 	return result
