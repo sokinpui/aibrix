@@ -21,11 +21,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/metrics"
 )
 
 // DecisionEngine evaluates routing decisions based on rule combinations
@@ -110,10 +107,7 @@ func (e *DecisionEngine) EvaluateDecisions(
 // This is the new method that supports all signal types including fact_check
 func (e *DecisionEngine) EvaluateDecisionsWithSignals(signals *SignalMatches) (*DecisionResult, error) {
 	// Record decision evaluation start time
-	start := time.Now()
 	defer func() {
-		latencySeconds := time.Since(start).Seconds()
-		metrics.RecordDecisionEvaluation(latencySeconds)
 	}()
 
 	if len(e.decisions) == 0 {
@@ -129,7 +123,6 @@ func (e *DecisionEngine) EvaluateDecisionsWithSignals(signals *SignalMatches) (*
 
 		if matched {
 			// Record decision match with confidence
-			metrics.RecordDecisionMatch(decision.Name, confidence)
 
 			results = append(results, DecisionResult{
 				Decision:     decision,
@@ -140,7 +133,6 @@ func (e *DecisionEngine) EvaluateDecisionsWithSignals(signals *SignalMatches) (*
 	}
 
 	if len(results) == 0 {
-		logging.Infof("No decision matched")
 		return nil, nil
 	}
 
@@ -296,7 +288,6 @@ func (e *DecisionEngine) evalNOT(
 	signals *SignalMatches,
 ) (matched bool, confidence float64, matchedRules []string) {
 	if len(children) != 1 {
-		logging.Warnf("NOT operator requires exactly 1 child, got %d — treating as non-match", len(children))
 		return false, 0, nil
 	}
 	m, c, r := e.evalNode(children[0], signals)
