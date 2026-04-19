@@ -5,11 +5,10 @@ import (
 	"strings"
 	"time"
 
-	candle_binding "github.com/vllm-project/semantic-router/candle-binding"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/metrics"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/utils/entropy"
+	candle_binding "github.com/vllm-project/semantic-router/candle-binding"
 )
 
 // ModalityClassificationResult holds the result of modality signal classification
@@ -39,7 +38,6 @@ func (c *Classifier) classifyModality(text string, detectionConfig *config.Modal
 	case config.ModalityDetectionHybrid:
 		return c.classifyModalityHybrid(text, detectionConfig)
 	default:
-		logging.Errorf("[ModalitySignal] BUG: unknown detection method %q — defaulting to AR", method)
 		return ModalityClassificationResult{Modality: "AR", Confidence: 0.0, Method: "error/unknown-method"}
 	}
 }
@@ -48,8 +46,6 @@ func (c *Classifier) classifyModality(text string, detectionConfig *config.Modal
 func (c *Classifier) classifyModalityByClassifier(text string, cfg *config.ModalityDetectionConfig) ModalityClassificationResult {
 	result, err := candle_binding.ClassifyMmBert32KModality(text)
 	if err == nil {
-		logging.Debugf("[ModalitySignal] Classifier: %s (confidence=%.3f) for prompt: %.80s",
-			result.Modality, result.Confidence, text)
 		return ModalityClassificationResult{
 			Modality:   result.Modality,
 			Confidence: result.Confidence,
@@ -57,14 +53,12 @@ func (c *Classifier) classifyModalityByClassifier(text string, cfg *config.Modal
 		}
 	}
 
-	logging.Errorf("[ModalitySignal] Classifier unavailable: %v — defaulting to AR", err)
 	return ModalityClassificationResult{Modality: "AR", Confidence: 0.0, Method: "classifier/error"}
 }
 
 // classifyModalityByKeyword uses keyword patterns from config to detect modality.
 func (c *Classifier) classifyModalityByKeyword(text string, cfg *config.ModalityDetectionConfig) ModalityClassificationResult {
 	if cfg == nil || len(cfg.Keywords) == 0 {
-		logging.Warnf("[ModalitySignal] Keyword detection requested but no keywords configured — defaulting to AR")
 		return ModalityClassificationResult{Modality: "AR", Confidence: 0.5, Method: "keyword/no-config"}
 	}
 
@@ -87,13 +81,11 @@ func (c *Classifier) classifyModalityByKeyword(text string, cfg *config.Modality
 	if len(cfg.BothKeywords) > 0 {
 		for _, kw := range cfg.BothKeywords {
 			if strings.Contains(lowerContent, strings.ToLower(kw)) {
-				logging.Debugf("[ModalitySignal] Keyword: BOTH detected (image + both_keyword %q) for: %.80s", kw, text)
 				return ModalityClassificationResult{Modality: "BOTH", Confidence: 0.75, Method: "keyword"}
 			}
 		}
 	}
 
-	logging.Debugf("[ModalitySignal] Keyword: DIFFUSION detected for: %.80s", text)
 	return ModalityClassificationResult{Modality: "DIFFUSION", Confidence: 0.8, Method: "keyword"}
 }
 
@@ -105,8 +97,6 @@ func (c *Classifier) classifyModalityHybrid(text string, cfg *config.ModalityDet
 	// Try classifier first
 	classifierResult, err := candle_binding.ClassifyMmBert32KModality(text)
 	if err == nil && classifierResult.Confidence >= confThreshold {
-		logging.Debugf("[ModalitySignal] Hybrid(classifier): %s (confidence=%.3f, threshold=%.2f) for: %.80s",
-			classifierResult.Modality, classifierResult.Confidence, confThreshold, text)
 		return ModalityClassificationResult{
 			Modality:   classifierResult.Modality,
 			Confidence: classifierResult.Confidence,
@@ -119,8 +109,6 @@ func (c *Classifier) classifyModalityHybrid(text string, cfg *config.ModalityDet
 		keywordResult := c.classifyModalityByKeyword(text, cfg)
 
 		if classifierResult.Modality == keywordResult.Modality {
-			logging.Infof("[ModalitySignal] Hybrid(agree): %s (classifier=%.3f, keyword=%.3f) for: %.80s",
-				classifierResult.Modality, classifierResult.Confidence, keywordResult.Confidence, text)
 			return ModalityClassificationResult{
 				Modality:   classifierResult.Modality,
 				Confidence: (classifierResult.Confidence + keywordResult.Confidence) / 2,
@@ -130,26 +118,19 @@ func (c *Classifier) classifyModalityHybrid(text string, cfg *config.ModalityDet
 
 		lowerThreshold := confThreshold * cfg.GetLowerThresholdRatio()
 		if classifierResult.Confidence >= lowerThreshold {
-			logging.Infof("[ModalitySignal] Hybrid(classifier-preferred): %s (classifier=%.3f vs keyword=%s) for: %.80s",
-				classifierResult.Modality, classifierResult.Confidence, keywordResult.Modality, text)
 			return ModalityClassificationResult{
 				Modality:   classifierResult.Modality,
 				Confidence: classifierResult.Confidence,
 				Method:     "hybrid/classifier-preferred",
 			}
 		}
-
-		logging.Debugf("[ModalitySignal] Hybrid(keyword-override): %s (classifier=%s@%.3f too low) for: %.80s",
-			keywordResult.Modality, classifierResult.Modality, classifierResult.Confidence, text)
 		return ModalityClassificationResult{
 			Modality:   keywordResult.Modality,
 			Confidence: keywordResult.Confidence,
 			Method:     "hybrid/keyword-override",
 		}
 	}
-
 	// Classifier unavailable - fall back to keyword detection
-	logging.Debugf("[ModalitySignal] Hybrid: classifier unavailable (%v), using keyword detection", err)
 	return c.classifyModalityByKeyword(text, cfg)
 }
 
@@ -245,9 +226,6 @@ func (c *Classifier) classifyCategoryWithEntropyInTree(text string) (string, flo
 		return "", 0.0, entropy.ReasoningDecision{}, fmt.Errorf("classification error: %w", err)
 	}
 
-	logging.Debugf("Classification result: class=%d, confidence=%.4f, entropy_available=%t",
-		result.Class, result.Confidence, len(result.Probabilities) > 0)
-
 	// Get category names for all classes and translate to generic names when configured
 	categoryNames := make([]string, len(result.Probabilities))
 	for i := range result.Probabilities {
@@ -290,9 +268,6 @@ func (c *Classifier) classifyCategoryWithEntropyInTree(text string) (string, flo
 			fallbackCategory = "other"
 		}
 
-		logging.Debugf("Classification confidence (%.4f) below threshold (%.4f), falling back to category: %s",
-			result.Confidence, c.Config.CategoryModel.Threshold, fallbackCategory)
-
 		// Record the fallback category as a signal match
 		metrics.RecordSignalMatch(config.SignalTypeKeyword, fallbackCategory)
 
@@ -309,7 +284,6 @@ func (c *Classifier) classifyCategoryWithEntropyInTree(text string) (string, flo
 			fallbackCategory = "other"
 		}
 
-		logging.Warnf("Class index %d not found in category mapping, falling back to: %s", result.Class, fallbackCategory)
 		metrics.RecordSignalMatch(config.SignalTypeKeyword, fallbackCategory)
 		return fallbackCategory, float64(result.Confidence), reasoningDecision, nil
 	}
@@ -317,9 +291,6 @@ func (c *Classifier) classifyCategoryWithEntropyInTree(text string) (string, flo
 
 	// Record the category as a signal match
 	metrics.RecordSignalMatch(config.SignalTypeKeyword, genericCategory)
-
-	logging.Debugf("Classified as category: %s (mmlu=%s), reasoning_decision: use=%t, confidence=%.3f, reason=%s",
-		genericCategory, categoryName, reasoningDecision.UseReasoning, reasoningDecision.Confidence, reasoningDecision.DecisionReason)
 
 	return genericCategory, float64(result.Confidence), reasoningDecision, nil
 }
@@ -345,7 +316,6 @@ func (c *Classifier) recordEntropyMetrics(probabilities []float32, reasoningDeci
 		metrics.RecordProbabilityDistributionQuality("sum_check", "valid")
 	} else {
 		metrics.RecordProbabilityDistributionQuality("sum_check", "invalid")
-		logging.Warnf("Probability distribution sum is %.3f (should be ~1.0)", probSum)
 	}
 
 	// Check for negative probabilities

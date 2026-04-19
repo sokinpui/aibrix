@@ -8,9 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	candle "github.com/vllm-project/semantic-router/candle-binding"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
+	candle "github.com/vllm-project/semantic-router/candle-binding"
 )
 
 // Default feedback type labels (used as fallback if config.json doesn't have id2label)
@@ -91,14 +90,6 @@ func (d *FeedbackDetector) loadMappingFromConfig(modelPath string) error {
 		d.mapping.LabelToIdx[normalizedLabel] = idx
 	}
 
-	logging.ComponentEvent("classifier", "feedback_mapping_loaded", map[string]interface{}{
-		"labels":    len(d.mapping.IdxToLabel),
-		"model_ref": modelPath,
-	})
-	for idx, label := range d.mapping.IdxToLabel {
-		logging.Debugf("  %s -> %s", idx, label)
-	}
-
 	return nil
 }
 
@@ -155,11 +146,6 @@ func (d *FeedbackDetector) Initialize() error {
 	}
 
 	d.initialized = true
-	logging.ComponentEvent("classifier", "feedback_detector_initialized", map[string]interface{}{
-		"backend":   backend,
-		"model_ref": d.config.ModelID,
-	})
-
 	return nil
 }
 
@@ -210,9 +196,6 @@ func (d *FeedbackDetector) Classify(text string) (*FeedbackResult, error) {
 		feedbackType = FeedbackLabelSatisfied
 		confidence = 1.0 - confidence
 	}
-
-	logging.Debugf("Feedback detection: text_len=%d, feedback_type=%s, confidence=%.3f",
-		len(text), feedbackType, confidence)
 
 	return &FeedbackResult{
 		FeedbackType: feedbackType,

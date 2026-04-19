@@ -3,8 +3,6 @@ package classification
 import (
 	"fmt"
 	"strings"
-
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 // ClassifyPII performs PII token classification on the given text and returns detected PII types
@@ -28,10 +26,6 @@ func (c *Classifier) ClassifyPIIWithThreshold(text string, threshold float32) ([
 		return nil, fmt.Errorf("PII token classification error: %w", err)
 	}
 
-	if len(tokenResult.Entities) > 0 {
-		logging.Infof("PII token classification found %d entities", len(tokenResult.Entities))
-	}
-
 	// Extract unique PII types from detected entities
 	// Translate class_X format to named types using PII mapping
 	piiTypes := make(map[string]bool)
@@ -40,8 +34,6 @@ func (c *Classifier) ClassifyPIIWithThreshold(text string, threshold float32) ([
 			// Translate entity type from class_X format to named type (e.g., class_6 → DATE_TIME)
 			translatedType := c.PIIMapping.TranslatePIIType(entity.EntityType)
 			piiTypes[translatedType] = true
-			logging.Infof("Detected PII entity: %s → %s ('%s') at [%d-%d] with confidence %.3f",
-				entity.EntityType, translatedType, entity.Text, entity.Start, entity.End, entity.Confidence)
 		}
 	}
 
@@ -49,10 +41,6 @@ func (c *Classifier) ClassifyPIIWithThreshold(text string, threshold float32) ([
 	var result []string
 	for piiType := range piiTypes {
 		result = append(result, piiType)
-	}
-
-	if len(result) > 0 {
-		logging.Infof("Detected PII types: %v", result)
 	}
 
 	return result, nil
@@ -79,10 +67,6 @@ func (c *Classifier) ClassifyPIIWithDetailsAndThreshold(text string, threshold f
 		return nil, fmt.Errorf("PII token classification error: %w", err)
 	}
 
-	if len(tokenResult.Entities) > 0 {
-		logging.Infof("PII token classification found %d entities", len(tokenResult.Entities))
-	}
-
 	// Convert token entities to PII detections, filtering by threshold
 	// Translate class_X format to named types using PII mapping
 	var detections []PIIDetection
@@ -98,22 +82,7 @@ func (c *Classifier) ClassifyPIIWithDetailsAndThreshold(text string, threshold f
 				Confidence: entity.Confidence,
 			}
 			detections = append(detections, detection)
-			logging.Infof("Detected PII entity: %s → %s ('%s') at [%d-%d] with confidence %.3f",
-				entity.EntityType, translatedType, entity.Text, entity.Start, entity.End, entity.Confidence)
 		}
-	}
-
-	if len(detections) > 0 {
-		// Log unique PII types for compatibility with existing logs
-		uniqueTypes := make(map[string]bool)
-		for _, d := range detections {
-			uniqueTypes[d.EntityType] = true
-		}
-		types := make([]string, 0, len(uniqueTypes))
-		for t := range uniqueTypes {
-			types = append(types, t)
-		}
-		logging.Infof("Detected PII types: %v", types)
 	}
 
 	return detections, nil
@@ -131,7 +100,6 @@ func (c *Classifier) DetectPIIInContent(allContent []string) []string {
 		// TODO: classifier may not handle the entire content, so we need to split the content into smaller chunks
 		piiTypes, err := c.ClassifyPII(content)
 		if err != nil {
-			logging.Errorf("PII classification error: %v", err)
 			// Continue without PII enforcement on error
 			continue
 		}
@@ -142,7 +110,6 @@ func (c *Classifier) DetectPIIInContent(allContent []string) []string {
 			}
 			detectedPII = append(detectedPII, piiType)
 			seenPII[piiType] = true
-			logging.Infof("Detected PII type '%s' in content", piiType)
 		}
 	}
 
@@ -175,7 +142,6 @@ func (c *Classifier) AnalyzeContentForPIIWithThreshold(contentList []string, thr
 		// Use ModernBERT PII token classifier for detailed analysis
 		tokenResult, err := c.piiInference.ClassifyTokens(content)
 		if err != nil {
-			logging.Errorf("Error analyzing content %d: %v", i, err)
 			continue
 		}
 
@@ -226,7 +192,6 @@ func (c *Classifier) collectPIIEntityTypes(ruleContents []string, ruleName strin
 			continue
 		}
 		if cached.err != nil {
-			logging.Errorf("[Signal Computation] PII rule %q: inference error: %v", ruleName, cached.err)
 			continue
 		}
 		for _, entity := range cached.result.Entities {

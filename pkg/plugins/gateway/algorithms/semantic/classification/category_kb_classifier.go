@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 type kbLabelData struct {
@@ -166,18 +165,10 @@ func (c *KnowledgeBaseClassifier) preloadEmbeddings() error {
 	for res := range resultChan {
 		if res.err != nil {
 			failCount++
-			logging.Warnf("[KnowledgeBase:%s] Failed to embed exemplar %q in %s: %v", c.rule.Name, res.ref.text, res.ref.label, res.err)
 			continue
 		}
 		c.labels[res.ref.label].Embeddings[res.ref.index] = res.embedding
 	}
-
-	logging.ComponentDebugEvent("classifier", "knowledge_base_embeddings_preloaded", map[string]interface{}{
-		"knowledge_base": c.rule.Name,
-		"exemplars":      len(refs) - failCount,
-		"labels":         len(c.labels),
-		"latency_ms":     time.Since(startTime).Milliseconds(),
-	})
 	c.rebuildLabelPrototypeBanks()
 	return nil
 }
@@ -330,18 +321,6 @@ func (c *KnowledgeBaseClassifier) Classify(text string) (*KBClassifyResult, erro
 	bestMatchedGroup, _ := bestScoredName(matchedGroupScores)
 	metricValues := c.computeMetricValues(labelScores, groupScores, bestScore, bestMatchedScore)
 
-	elapsed := time.Since(startTime)
-	logging.ComponentDebugEvent("classifier", "knowledge_base_classification_completed", map[string]interface{}{
-		"knowledge_base":          c.rule.Name,
-		"latency_ms":              elapsed.Milliseconds(),
-		"best_label":              bestLabel,
-		"best_similarity":         bestScore,
-		"best_matched_label":      bestMatchedLabel,
-		"best_matched_similarity": bestMatchedScore,
-		"best_group":              bestGroup,
-		"best_matched_group":      bestMatchedGroup,
-	})
-
 	return &KBClassifyResult{
 		BestLabel:             bestLabel,
 		BestSimilarity:        bestScore,
@@ -379,6 +358,5 @@ func (c *KnowledgeBaseClassifier) rebuildLabelPrototypeBanks() {
 		}
 		bank := newPrototypeBank(examples, c.rule.PrototypeScoring)
 		data.Prototype = bank
-		logPrototypeBankSummary("Knowledge Base "+c.rule.Name, labelName, bank)
 	}
 }

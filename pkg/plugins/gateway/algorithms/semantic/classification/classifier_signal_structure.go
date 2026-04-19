@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/metrics"
 )
 
@@ -17,9 +16,7 @@ func (c *Classifier) evaluateStructureSignal(results *SignalResults, mu *sync.Mu
 
 	results.Metrics.Structure.ExecutionTimeMs = float64(elapsed.Microseconds()) / 1000.0
 
-	logging.Debugf("[Signal Computation] Structure signal evaluation completed in %v", elapsed)
 	if err != nil {
-		logging.Errorf("structure rule evaluation failed: %v", err)
 		return
 	}
 	if len(matchedRules) == 0 {

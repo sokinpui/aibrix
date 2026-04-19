@@ -2,8 +2,6 @@ package classification
 
 import (
 	"strings"
-
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 // applyAuthzFailOpenOnClassifyError clears Classify error when authz.fail_open is true and user ID
@@ -13,7 +11,6 @@ func applyAuthzFailOpenOnClassifyError(failOpen bool, userID string, result *Aut
 		return result, nil
 	}
 	if failOpen && strings.TrimSpace(userID) == "" {
-		logging.Warnf("[Authz Signal] empty user identity with authz.fail_open=true — continuing with no matched roles (anonymous): %v", err)
 		return &AuthzResult{}, nil
 	}
 	return result, err

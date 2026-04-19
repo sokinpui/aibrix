@@ -6,7 +6,6 @@ import (
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/modelruntime"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 // BuildClassifier creates a classifier without executing runtime initialization.
@@ -61,26 +60,17 @@ func (c *Classifier) InitializeRuntime() error {
 		return fmt.Errorf("classifier is nil")
 	}
 
-	c.logHeuristicClassifierInitialization()
 	tasks := c.runtimeTasks()
 	if len(tasks) == 0 {
 		return nil
 	}
 
-	logging.ComponentEvent("classifier", "runtime_initialization_started", map[string]interface{}{
-		"tasks": len(tasks),
-	})
 	_, err := modelruntime.Execute(context.Background(), tasks, modelruntime.Options{
 		MaxParallelism: modelruntime.DefaultParallelism(len(tasks)),
-		OnEvent:        logRuntimeInitializationEvent,
 	})
 	if err != nil {
 		return err
 	}
-
-	logging.ComponentEvent("classifier", "runtime_initialization_completed", map[string]interface{}{
-		"tasks": len(tasks),
-	})
 	return nil
 }
 
@@ -124,25 +114,4 @@ func (c *Classifier) initializeConfiguredCategoryRuntime() error {
 		return c.initializeMCPCategoryClassifier()
 	}
 	return nil
-}
-
-func logRuntimeInitializationEvent(event modelruntime.Event) {
-	payload := map[string]interface{}{
-		"task":        event.Task,
-		"best_effort": event.BestEffort,
-	}
-	if event.Error != nil {
-		payload["error"] = event.Error.Error()
-	}
-
-	switch event.Status {
-	case modelruntime.TaskFailed:
-		if event.BestEffort {
-			logging.ComponentWarnEvent("classifier", "runtime_initializer_failed", payload)
-			return
-		}
-		logging.ComponentErrorEvent("classifier", "runtime_initializer_failed", payload)
-	case modelruntime.TaskSkipped:
-		logging.ComponentWarnEvent("classifier", "runtime_initializer_skipped", payload)
-	}
 }

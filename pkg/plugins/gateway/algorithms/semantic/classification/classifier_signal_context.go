@@ -9,10 +9,9 @@ import (
 	"sync"
 	"time"
 
-	candle_binding "github.com/vllm-project/semantic-router/candle-binding"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/metrics"
+	candle_binding "github.com/vllm-project/semantic-router/candle-binding"
 )
 
 // cachedJailbreakResult stores a cached jailbreak classification result.
@@ -75,7 +74,6 @@ func (c *Classifier) EvaluateAllSignalsWithContext(text string, contextText stri
 	var usedSignals map[string]bool
 	if forceEvaluateAll {
 		usedSignals = c.getAllSignalTypes()
-		logging.Debugf("[Signal Computation] Force evaluate all signals mode enabled")
 	} else {
 		usedSignals = c.getUsedSignals()
 	}
@@ -120,9 +118,7 @@ func (c *Classifier) evaluateKeywordSignal(results *SignalResults, mu *sync.Mute
 	results.Metrics.Keyword.ExecutionTimeMs = float64(elapsed.Microseconds()) / 1000.0
 	results.Metrics.Keyword.Confidence = 1.0 // Rule-based, always 1.0
 
-	logging.Debugf("[Signal Computation] Keyword signal evaluation completed in %v", elapsed)
 	if err != nil {
-		logging.Errorf("keyword rule evaluation failed: %v", err)
 	} else if category != "" {
 		// Record signal match
 		metrics.RecordSignalMatch(config.SignalTypeKeyword, category)
@@ -142,9 +138,7 @@ func (c *Classifier) evaluateEmbeddingSignal(results *SignalResults, mu *sync.Mu
 	// Record metrics
 	results.Metrics.Embedding.ExecutionTimeMs = float64(elapsed.Microseconds()) / 1000.0
 
-	logging.Debugf("[Signal Computation] Embedding signal evaluation completed in %v", elapsed)
 	if err != nil {
-		logging.Errorf("embedding rule evaluation failed: %v", err)
 		return
 	}
 	if detailedResult == nil {
@@ -171,9 +165,6 @@ func (c *Classifier) evaluateEmbeddingSignal(results *SignalResults, mu *sync.Mu
 		metrics.RecordSignalMatch(config.SignalTypeEmbedding, mr.RuleName)
 		results.MatchedEmbeddingRules = append(results.MatchedEmbeddingRules, mr.RuleName)
 		results.SignalConfidences["embedding:"+mr.RuleName] = mr.Score
-
-		logging.Debugf("[Signal Computation] Embedding match: rule=%q, score=%.4f, method=%s",
-			mr.RuleName, mr.Score, mr.Method)
 	}
 	mu.Unlock()
 }
@@ -183,7 +174,6 @@ func (c *Classifier) evaluateDomainSignal(results *SignalResults, mu *sync.Mutex
 	domainResult, err := c.categoryInference.ClassifyWithProbabilities(text)
 	if err != nil {
 		// Fall back to Classify() (top-1 only) when ClassifyWithProbabilities is unavailable.
-		logging.Debugf("[Signal Computation] ClassifyWithProbabilities unavailable, falling back to Classify: %v", err)
 		basicResult, basicErr := c.categoryInference.Classify(text)
 		if basicErr != nil {
 			err = basicErr
@@ -212,10 +202,7 @@ func (c *Classifier) evaluateDomainSignal(results *SignalResults, mu *sync.Mutex
 	if categoryName != "" && err == nil {
 		results.Metrics.Domain.Confidence = float64(domainResult.Confidence)
 	}
-	logging.Debugf("[Signal Computation] Domain signal evaluation completed in %v", elapsed)
-
 	if err != nil {
-		logging.Errorf("domain rule evaluation failed: %v", err)
 	} else {
 		matched := c.matchDomainCategories(domainResult, categoryName)
 		mu.Lock()
@@ -249,9 +236,7 @@ func (c *Classifier) evaluateFactCheckSignal(results *SignalResults, mu *sync.Mu
 		results.Metrics.FactCheck.Confidence = float64(factCheckResult.Confidence)
 	}
 
-	logging.Debugf("[Signal Computation] Fact-check signal evaluation completed in %v", elapsed)
 	if err != nil {
-		logging.Errorf("fact-check rule evaluation failed: %v", err)
 	} else if factCheckResult != nil {
 		// Check if this signal is defined in fact_check_rules
 		for _, rule := range c.Config.FactCheckRules {
@@ -270,7 +255,6 @@ func (c *Classifier) evaluateFactCheckSignal(results *SignalResults, mu *sync.Mu
 
 func (c *Classifier) evaluateUserFeedbackSignal(results *SignalResults, mu *sync.Mutex, text string, hasPriorAssistantReply bool) {
 	if !shouldEvaluateUserFeedbackSignal(hasPriorAssistantReply) {
-		logging.Debugf("[Signal Computation] User feedback signal skipped: no prior assistant reply")
 		return
 	}
 
@@ -294,9 +278,7 @@ func (c *Classifier) evaluateUserFeedbackSignal(results *SignalResults, mu *sync
 		results.Metrics.UserFeedback.Confidence = float64(feedbackResult.Confidence)
 	}
 
-	logging.Debugf("[Signal Computation] User feedback signal evaluation completed in %v", elapsed)
 	if err != nil {
-		logging.Errorf("user feedback rule evaluation failed: %v", err)
 	} else if feedbackResult != nil {
 		// Check if this signal is defined in user_feedback_rules
 		for _, rule := range c.Config.UserFeedbackRules {
@@ -320,9 +302,7 @@ func (c *Classifier) evaluateReaskSignal(results *SignalResults, mu *sync.Mutex,
 
 	results.Metrics.Reask.ExecutionTimeMs = float64(elapsed.Microseconds()) / 1000.0
 
-	logging.Debugf("[Signal Computation] Reask signal evaluation completed in %v", elapsed)
 	if err != nil {
-		logging.Errorf("reask rule evaluation failed: %v", err)
 		return
 	}
 	if len(matchedRules) == 0 {
@@ -369,13 +349,10 @@ func (c *Classifier) evaluatePreferenceSignal(results *SignalResults, mu *sync.M
 		results.Metrics.Preference.Confidence = float64(preferenceResult.Confidence)
 	}
 
-	logging.Debugf("[Signal Computation] Preference signal evaluation completed in %v", elapsed)
 	if err != nil {
 		if errors.Is(err, ErrPreferenceBelowThreshold) {
-			logging.Debugf("preference rule did not match threshold: %v", err)
 			return
 		}
-		logging.Errorf("preference rule evaluation failed: %v", err)
 		return
 	}
 	if preferenceResult == nil || preferenceName == "" || !c.hasConfiguredPreferenceRule(preferenceName) {
@@ -389,7 +366,6 @@ func (c *Classifier) evaluatePreferenceSignal(results *SignalResults, mu *sync.M
 	recordPreferenceSignalValues(results, preferenceResult, details)
 	mu.Unlock()
 
-	logging.Debugf("Preference rule matched: %s", preferenceName)
 }
 
 func (c *Classifier) evaluateLanguageSignal(results *SignalResults, mu *sync.Mutex, text string) {
@@ -413,9 +389,7 @@ func (c *Classifier) evaluateLanguageSignal(results *SignalResults, mu *sync.Mut
 		results.Metrics.Language.Confidence = languageResult.Confidence
 	}
 
-	logging.Debugf("[Signal Computation] Language signal evaluation completed in %v", elapsed)
 	if err != nil {
-		logging.Errorf("language rule evaluation failed: %v", err)
 	} else if languageResult != nil {
 		// Check if this language code is defined in language_rules
 		for _, rule := range c.Config.LanguageRules {
@@ -441,9 +415,7 @@ func (c *Classifier) evaluateContextSignal(results *SignalResults, mu *sync.Mute
 	results.Metrics.Context.ExecutionTimeMs = float64(elapsed.Microseconds()) / 1000.0
 	results.Metrics.Context.Confidence = 1.0 // Rule-based, always 1.0
 
-	logging.Debugf("[Signal Computation] Context signal evaluation completed in %v (count=%d)", elapsed, count)
 	if err != nil {
-		logging.Errorf("context rule evaluation failed: %v", err)
 	} else {
 		mu.Lock()
 		results.MatchedContextRules = matchedRules
@@ -461,9 +433,7 @@ func (c *Classifier) evaluateComplexitySignal(results *SignalResults, mu *sync.M
 	// Record signal extraction metrics for each matched rule
 	results.Metrics.Complexity.ExecutionTimeMs = float64(elapsed.Microseconds()) / 1000.0
 
-	logging.Debugf("[Signal Computation] Complexity signal evaluation completed in %v", elapsed)
 	if err != nil {
-		logging.Errorf("complexity rule evaluation failed: %v", err)
 		return
 	}
 
@@ -504,9 +474,6 @@ func (c *Classifier) evaluateModalitySignal(results *SignalResults, mu *sync.Mut
 	// Record metrics
 	results.Metrics.Modality.ExecutionTimeMs = float64(elapsed.Microseconds()) / 1000.0
 	results.Metrics.Modality.Confidence = float64(modalityResult.Confidence)
-
-	logging.Debugf("[Signal Computation] Modality signal evaluation completed in %v: %s (confidence=%.3f, method=%s)",
-		elapsed, signalName, modalityResult.Confidence, modalityResult.Method)
 
 	// Check if this signal name is defined in modality_rules
 	for _, rule := range c.Config.ModalityRules {
@@ -581,7 +548,6 @@ func (c *Classifier) evaluateJailbreakSignal(results *SignalResults, mu *sync.Mu
 	}
 
 	metrics.RecordSignalExtraction(config.SignalTypeJailbreak, "jailbreak_evaluated", latencySeconds)
-	logging.Debugf("[Signal Computation] Jailbreak signal evaluation completed in %v", elapsed)
 }
 
 func (c *Classifier) evaluateJailbreakRule(rule config.JailbreakRule, jailbreakText string, nonUserMessages []string, jailbreakCache map[string]cachedJailbreakResult, start time.Time, results *SignalResults, mu *sync.Mutex) {
@@ -613,7 +579,6 @@ func buildContentList(text string, nonUserMessages []string, includeHistory bool
 func (c *Classifier) evaluateContrastiveJailbreakRule(rule config.JailbreakRule, contentToAnalyze []string, start time.Time, results *SignalResults, mu *sync.Mutex) {
 	cjc, ok := c.contrastiveJailbreakClassifiers[rule.Name]
 	if !ok {
-		logging.Errorf("[Signal Computation] Contrastive jailbreak classifier not found for rule %q", rule.Name)
 		return
 	}
 	analysisResult := cjc.AnalyzeMessages(contentToAnalyze)
@@ -638,9 +603,6 @@ func (c *Classifier) evaluateContrastiveJailbreakRule(rule config.JailbreakRule,
 	}
 	results.SignalConfidences["jailbreak:"+rule.Name] = float64(confidence)
 	mu.Unlock()
-
-	logging.Debugf("[Signal Computation] Contrastive jailbreak rule %q matched: score=%.4f threshold=%.4f worst_msg_idx=%d time=%v",
-		rule.Name, analysisResult.MaxScore, threshold, analysisResult.WorstMsgIndex, analysisResult.ProcessingTime)
 }
 
 func (c *Classifier) evaluateBERTJailbreakRule(rule config.JailbreakRule, contentToAnalyze []string, jailbreakCache map[string]cachedJailbreakResult, start time.Time, results *SignalResults, mu *sync.Mutex) {
@@ -676,12 +638,10 @@ func (c *Classifier) findBestJailbreakMatch(rule config.JailbreakRule, contentTo
 			continue
 		}
 		if cached.err != nil {
-			logging.Errorf("[Signal Computation] Jailbreak rule %q: inference error: %v", rule.Name, cached.err)
 			continue
 		}
 		jailbreakType, ok := c.JailbreakMapping.GetJailbreakTypeFromIndex(cached.result.Class)
 		if !ok {
-			logging.Errorf("[Signal Computation] Jailbreak rule %q: unknown class index %d", rule.Name, cached.result.Class)
 			continue
 		}
 		if cached.result.Confidence < rule.Threshold || jailbreakType != "jailbreak" {
@@ -748,7 +708,6 @@ func (c *Classifier) evaluatePIISignal(results *SignalResults, mu *sync.Mutex, p
 	}
 
 	metrics.RecordSignalExtraction(config.SignalTypePII, "pii_evaluated", latencySeconds)
-	logging.Debugf("[Signal Computation] PII signal evaluation completed in %v", elapsed)
 }
 
 func (c *Classifier) evaluatePIIRule(rule config.PIIRule, piiText string, nonUserMessages []string, piiCache map[string]cachedPIIResult, start time.Time, results *SignalResults, mu *sync.Mutex) {
@@ -763,8 +722,6 @@ func (c *Classifier) evaluatePIIRule(rule config.PIIRule, piiText string, nonUse
 	if len(deniedEntities) > 0 {
 		metrics.RecordSignalExtraction(config.SignalTypePII, rule.Name, time.Since(start).Seconds())
 		metrics.RecordSignalMatch(config.SignalTypePII, rule.Name)
-
-		logging.Debugf("[Signal Computation] PII rule %q matched: denied_entities=%v", rule.Name, deniedEntities)
 
 		mu.Lock()
 		results.MatchedPIIRules = append(results.MatchedPIIRules, rule.Name)

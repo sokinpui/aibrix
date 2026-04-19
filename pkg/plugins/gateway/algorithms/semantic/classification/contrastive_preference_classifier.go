@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 var ErrPreferenceBelowThreshold = errors.New("preference below threshold")
@@ -118,9 +117,6 @@ func (c *ContrastivePreferenceClassifier) preloadRuleEmbeddings() error {
 
 	resultCh := c.embedRuleExamples(tasks)
 	loaded, firstErr := c.collectEmbeddedResults(resultCh)
-
-	logging.Infof("[Preference Contrastive] preloaded %d/%d example embeddings using model=%s in %v", loaded, len(tasks), c.modelType, time.Since(start))
-
 	if firstErr != nil {
 		return firstErr
 	}
@@ -198,7 +194,6 @@ func (c *ContrastivePreferenceClassifier) collectEmbeddedResults(
 			if firstErr == nil {
 				firstErr = res.err
 			}
-			logging.Warnf("[Preference Contrastive] failed to embed example for %s: %v", res.ruleName, res.err)
 			continue
 		}
 		c.ruleEmbeddings[res.ruleName] = append(c.ruleEmbeddings[res.ruleName], res.embedding)
@@ -285,8 +280,6 @@ func (c *ContrastivePreferenceClassifier) ClassifyDetailed(text string) (*Prefer
 			Threshold:      c.ruleThresholds[rule.Name],
 			PrototypeCount: bankScore.PrototypeCount,
 		}
-		logging.Debugf("[Preference Contrastive] rule=%s score=%.4f best=%.4f support=%.4f prototypes=%d",
-			rule.Name, score.Score, score.Best, score.Support, score.PrototypeCount)
 		scores = append(scores, score)
 	}
 
@@ -351,6 +344,5 @@ func (c *ContrastivePreferenceClassifier) rebuildRuleBanks() {
 		}
 		bank := newPrototypeBank(prototypeExamples, c.prototypeCfg)
 		c.ruleBanks[rule.Name] = bank
-		logPrototypeBankSummary("Preference Contrastive", rule.Name, bank)
 	}
 }

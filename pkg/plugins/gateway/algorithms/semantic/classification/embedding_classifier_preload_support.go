@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
-
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 type embeddingPreloadResult struct {
@@ -84,7 +82,6 @@ func (c *EmbeddingClassifier) collectCandidateEmbeddingResults(
 			if firstError == nil {
 				firstError = fmt.Errorf("failed to compute embedding for candidate %q: %w", res.candidate, res.err)
 			}
-			logging.Warnf("Failed to compute embedding for candidate %q: %v", res.candidate, res.err)
 			continue
 		}
 		c.candidateEmbeddings[res.candidate] = res.embedding

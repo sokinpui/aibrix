@@ -7,9 +7,8 @@ import (
 	"strings"
 	"time"
 
-	candle_binding "github.com/vllm-project/semantic-router/candle-binding"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
+	candle_binding "github.com/vllm-project/semantic-router/candle-binding"
 )
 
 // VLLMJailbreakInference implements JailbreakInference using vLLM REST API
@@ -91,11 +90,7 @@ func (v *VLLMJailbreakInference) Classify(text string) (candle_binding.ClassResu
 
 	// Parse model output - flexible to support multiple formats
 	output := resp.Choices[0].Message.Content
-	logging.Debugf("vLLM jailbreak detection response: %s", output)
 	isJailbreak, confidence, categories := v.parseSafetyOutput(output)
-	logging.Debugf("Parsed result: isJailbreak=%v, confidence=%.3f, categories=%v",
-		isJailbreak, confidence, categories)
-
 	// Map to ClassResult format
 	// Class: 0 = safe, 1 = jailbreak/unsafe
 	class := 0
@@ -142,7 +137,6 @@ func (v *VLLMJailbreakInference) parseSafetyOutput(output string) (bool, float32
 		isJailbreak, conf := v.parseSimpleFormat(output)
 		return isJailbreak, conf, nil
 	default:
-		logging.Warnf("Unknown parser type: %s, using auto", parserType)
 		// Fallback to auto mode
 		if result, conf, cats := v.parseQwen3GuardFormat(output); conf > 0.1 {
 			return result, conf, cats
@@ -198,8 +192,6 @@ func (v *VLLMJailbreakInference) parseQwen3GuardFormat(output string) (bool, flo
 
 		// Extract categories from output
 		categories := v.extractCategories(output)
-		logging.Debugf("Qwen3Guard parser: Safety=%s, isJailbreak=%v, confidence=%.3f, categories=%v",
-			safety, isJailbreak, confidence, categories)
 		return isJailbreak, confidence, categories
 	}
 
@@ -223,8 +215,6 @@ func (v *VLLMJailbreakInference) parseQwen3GuardFormat(output string) (bool, flo
 
 		// Extract categories from output
 		categories := v.extractCategories(output)
-		logging.Debugf("Qwen3Guard parser (severity): Severity=%s, isJailbreak=%v, confidence=%.3f, categories=%v",
-			severity, isJailbreak, confidence, categories)
 		return isJailbreak, confidence, categories
 	}
 
@@ -239,12 +229,9 @@ func (v *VLLMJailbreakInference) parseQwen3GuardFormat(output string) (bool, flo
 			strings.Contains(categoryStr, "harmful") ||
 			strings.Contains(categoryStr, "violence") ||
 			strings.Contains(categoryStr, "hate") {
-			logging.Debugf("Qwen3Guard parser (category): Categories=%v, isJailbreak=true, confidence=0.9", categories)
 			return true, 0.9, categories
 		}
 	}
-
-	logging.Warnf("Qwen3Guard parser failed to parse output: %s", output)
 	return false, 0.0, nil // Failed to parse
 }
 

@@ -87,8 +87,6 @@ import (
 	"sync"
 	"time"
 	"unsafe"
-
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 // UnifiedClassifierStats holds performance statistics
@@ -287,8 +285,6 @@ func (uc *UnifiedClassifier) classifyBatchWithLoRA(texts []string) (*UnifiedBatc
 		return uc.testClassifyBatchWithLoRA(texts)
 	}
 
-	logging.Infof("Using LoRA models for batch classification, batch size: %d", len(texts))
-
 	// Convert Go strings to C string array
 	cTexts := make([]*C.char, len(texts))
 	for i, text := range texts {
@@ -421,14 +417,6 @@ func (uc *UnifiedClassifier) initializeLoRABindings() error {
 		return fmt.Errorf("loRA model paths not configured")
 	}
 
-	logging.ComponentDebugEvent("classifier", "lora_bindings_init_started", map[string]interface{}{
-		"intent_model_ref":   uc.loraModelPaths.IntentPath,
-		"pii_model_ref":      uc.loraModelPaths.PIIPath,
-		"security_model_ref": uc.loraModelPaths.SecurityPath,
-		"architecture":       uc.loraModelPaths.Architecture,
-		"use_cpu":            true,
-	})
-
 	// Convert Go strings to C strings
 	cIntentPath := C.CString(uc.loraModelPaths.IntentPath)
 	defer C.free(unsafe.Pointer(cIntentPath))
@@ -454,14 +442,6 @@ func (uc *UnifiedClassifier) initializeLoRABindings() error {
 	if !success {
 		return fmt.Errorf("c.init_lora_unified_classifier failed")
 	}
-
-	logging.ComponentEvent("classifier", "lora_bindings_initialized", map[string]interface{}{
-		"intent_model_ref":   uc.loraModelPaths.IntentPath,
-		"pii_model_ref":      uc.loraModelPaths.PIIPath,
-		"security_model_ref": uc.loraModelPaths.SecurityPath,
-		"architecture":       uc.loraModelPaths.Architecture,
-		"use_cpu":            true,
-	})
 	return nil
 }
 

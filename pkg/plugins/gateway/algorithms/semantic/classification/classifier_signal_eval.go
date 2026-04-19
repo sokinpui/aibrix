@@ -7,7 +7,6 @@ import (
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/decision"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/metrics"
 )
 
@@ -256,7 +255,6 @@ func (c *Classifier) EvaluateAllSignalsWithHeaders(text string, contextText stri
 			// Do NOT swallow authz errors — propagate to caller.
 			// A missing user identity header when role_bindings are configured is a hard failure,
 			// not a signal that "didn't fire." Silent bypass is not allowed.
-			logging.Errorf("[Authz Signal] classification failed: %v", err)
 			metrics.RecordSignalExtraction(config.SignalTypeAuthz, "error", latencySeconds)
 			return nil, fmt.Errorf("authz signal evaluation failed: %w", err)
 		}
@@ -267,9 +265,7 @@ func (c *Classifier) EvaluateAllSignalsWithHeaders(text string, contextText stri
 		}
 		results.MatchedAuthzRules = authzResult.MatchedRules
 
-		logging.Debugf("[Signal Computation] Authz signal evaluation completed in %v", elapsed)
 	} else if !isSignalTypeUsed(usedSignals, config.SignalTypeAuthz) {
-		logging.Debugf("[Signal Computation] Authz signal not used in any decision, skipping evaluation")
 	}
 
 	return results, nil
@@ -298,13 +294,6 @@ func (c *Classifier) evaluateDecisionInternal(signals *SignalResults, trace bool
 	if len(c.Config.Decisions) == 0 {
 		return nil, nil, fmt.Errorf("no decisions configured")
 	}
-
-	logging.Debugf("Signal evaluation results: keyword=%v, embedding=%v, domain=%v, fact_check=%v, user_feedback=%v, reask=%v, preference=%v, language=%v, context=%v, structure=%v, complexity=%v, modality=%v, authz=%v, jailbreak=%v, pii=%v, kb=%v",
-		signals.MatchedKeywordRules, signals.MatchedEmbeddingRules, signals.MatchedDomainRules,
-		signals.MatchedFactCheckRules, signals.MatchedUserFeedbackRules, signals.MatchedReaskRules, signals.MatchedPreferenceRules,
-		signals.MatchedLanguageRules, signals.MatchedContextRules, signals.MatchedStructureRules,
-		signals.MatchedComplexityRules, signals.MatchedModalityRules, signals.MatchedAuthzRules,
-		signals.MatchedJailbreakRules, signals.MatchedPIIRules, signals.MatchedKBRules)
 
 	engine := decision.NewDecisionEngine(
 		c.Config.KeywordRules,
@@ -353,9 +342,6 @@ func (c *Classifier) evaluateDecisionInternal(signals *SignalResults, trace bool
 	}
 
 	result.MatchedKeywords = signals.MatchedKeywords
-
-	logging.Debugf("Decision evaluation result: decision=%s, confidence=%.3f, matched_rules=%v, matched_keywords=%v",
-		result.Decision.Name, result.Confidence, result.MatchedRules, result.MatchedKeywords)
 
 	return result, traces, nil
 }

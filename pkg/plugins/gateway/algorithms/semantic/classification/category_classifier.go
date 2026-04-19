@@ -3,9 +3,8 @@ package classification
 import (
 	"strings"
 
-	candle_binding "github.com/vllm-project/semantic-router/candle-binding"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/utils/entropy"
+	candle_binding "github.com/vllm-project/semantic-router/candle-binding"
 )
 
 // matchDomainCategories returns the domain categories that exceed the configured
@@ -27,9 +26,6 @@ func (c *Classifier) matchDomainCategories(
 	}
 
 	entropyResult := entropy.AnalyzeEntropy(domainResult.Probabilities)
-	logging.Debugf("[Signal Computation] Domain entropy analysis: entropy=%.3f, normalized=%.3f, uncertainty=%s",
-		entropyResult.Entropy, entropyResult.NormalizedEntropy, entropyResult.UncertaintyLevel)
-
 	categoryNames := make([]string, len(domainResult.Probabilities))
 	for i := range domainResult.Probabilities {
 		if name, ok := c.CategoryMapping.GetCategoryFromIndex(i); ok {
@@ -56,8 +52,6 @@ func (c *Classifier) matchDomainCategories(
 		}
 	}
 
-	logging.Debugf("[Signal Computation] Domain signal matched %d categories (uncertainty=%s)",
-		len(matched), entropyResult.UncertaintyLevel)
 	return matched
 }
 

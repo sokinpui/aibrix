@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 func (c *Classifier) applySignalGroups(results *SignalResults) *SignalResults {
@@ -125,16 +124,6 @@ func applySignalGroupToMatches(
 
 	confidences[signalConfidenceKey(signalType, winner)] = winnerScore
 
-	logging.Debugf(
-		"[Signal Groups] %s group %q reduced contenders %v to winner %q (score=%.4f, semantics=%s)",
-		signalType,
-		group.Name,
-		contenders,
-		winner,
-		winnerScore,
-		group.Semantics,
-	)
-
 	return filtered
 }
 
@@ -156,12 +145,6 @@ func applySignalGroupDefaultFallback(
 		}
 	}
 
-	logging.Debugf(
-		"[Signal Groups] %s group %q synthesized default member %q because no group members matched",
-		signalType,
-		group.Name,
-		group.Default,
-	)
 	return append(matched, group.Default)
 }
 

@@ -7,7 +7,6 @@ import (
 	lingua "github.com/pemistahl/lingua-go"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 // linguaDetector is a package-level singleton. Building the detector is
@@ -91,9 +90,6 @@ func (c *LanguageClassifier) Classify(text string) (*LanguageResult, error) {
 			Confidence:   0.5,
 		}, nil
 	}
-
-	logging.Infof("Language classification: code=%s, confidence=%.2f (lingua-go: %s)",
-		code, confidence, lang.String())
 
 	return &LanguageResult{
 		LanguageCode: code,

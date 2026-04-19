@@ -12,7 +12,6 @@ import (
 	"github.com/openai/openai-go"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 // VLLMClient handles communication with vLLM REST API for classifiers
@@ -150,8 +149,6 @@ func (c *VLLMClient) Generate(ctx context.Context, modelName string, prompt stri
 	if err := json.Unmarshal(body, &chatResp); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	logging.Debugf("vLLM API call successful: model=%s, choices=%d", modelName, len(chatResp.Choices))
 
 	return &chatResp, nil
 }

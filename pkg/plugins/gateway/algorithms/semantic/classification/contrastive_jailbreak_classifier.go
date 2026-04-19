@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 // ContrastiveJailbreakResult holds the analysis outcome for a single rule.
@@ -77,7 +76,6 @@ func (c *ContrastiveJailbreakClassifier) AnalyzeMessages(messages []string) Cont
 		}
 		output, err := getEmbeddingWithModelType(msg, c.modelType, 0)
 		if err != nil {
-			logging.Warnf("[Contrastive Jailbreak] Failed to embed message %d: %v", i, err)
 			continue
 		}
 		msgEmb := output.Embedding
@@ -118,9 +116,6 @@ func (c *ContrastiveJailbreakClassifier) AnalyzeMessages(messages []string) Cont
 func (c *ContrastiveJailbreakClassifier) preloadKBEmbeddings() error {
 	startTime := time.Now()
 
-	logging.Infof("[Contrastive Jailbreak] Preloading KB embeddings for rule %q (jailbreak: %d, benign: %d, model: %s)",
-		c.rule.Name, len(c.rule.JailbreakPatterns), len(c.rule.BenignPatterns), c.modelType)
-
 	type task struct {
 		text        string
 		isJailbreak bool
@@ -135,7 +130,6 @@ func (c *ContrastiveJailbreakClassifier) preloadKBEmbeddings() error {
 	}
 
 	if len(tasks) == 0 {
-		logging.Warnf("[Contrastive Jailbreak] Rule %q has no KB patterns", c.rule.Name)
 		return nil
 	}
 
@@ -204,10 +198,5 @@ func (c *ContrastiveJailbreakClassifier) preloadKBEmbeddings() error {
 		mu.Unlock()
 		ok++
 	}
-
-	elapsed := time.Since(startTime)
-	logging.Infof("[Contrastive Jailbreak] Rule %q: preloaded %d/%d KB embeddings in %v (workers: %d)",
-		c.rule.Name, ok, len(tasks), elapsed, numWorkers)
-
 	return firstErr
 }

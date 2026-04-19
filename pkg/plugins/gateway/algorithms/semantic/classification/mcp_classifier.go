@@ -9,13 +9,12 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	candle_binding "github.com/vllm-project/semantic-router/candle-binding"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
 	mcpclient "github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/mcp"
 	api "github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/mcp/api"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/metrics"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/utils/entropy"
+	candle_binding "github.com/vllm-project/semantic-router/candle-binding"
 )
 
 const (
@@ -117,11 +116,6 @@ func (m *MCPCategoryClassifier) Init(cfg *config.RouterConfig) error {
 		client.Close()
 		return fmt.Errorf("failed to discover classification tool: %w", err)
 	}
-
-	logging.ComponentEvent("classifier", "mcp_category_classifier_initialized", map[string]interface{}{
-		"tool_name":      m.toolName,
-		"transport_type": cfg.TransportType,
-	})
 	return nil
 }
 
@@ -130,10 +124,6 @@ func (m *MCPCategoryClassifier) discoverClassificationTool() error {
 	// If tool name is explicitly specified, use it
 	if m.config.ToolName != "" {
 		m.toolName = m.config.ToolName
-		logging.ComponentEvent("classifier", "mcp_category_tool_selected", map[string]interface{}{
-			"tool_name":      m.toolName,
-			"selection_mode": "configured",
-		})
 		return nil
 	}
 
@@ -155,10 +145,6 @@ func (m *MCPCategoryClassifier) discoverClassificationTool() error {
 		for _, tool := range tools {
 			if tool.Name == toolName {
 				m.toolName = tool.Name
-				logging.ComponentEvent("classifier", "mcp_category_tool_selected", map[string]interface{}{
-					"tool_name":      m.toolName,
-					"selection_mode": "auto_name_match",
-				})
 				return nil
 			}
 		}
@@ -170,10 +156,6 @@ func (m *MCPCategoryClassifier) discoverClassificationTool() error {
 		lowerDesc := strings.ToLower(tool.Description)
 		if strings.Contains(lowerName, "classif") || strings.Contains(lowerDesc, "classif") {
 			m.toolName = tool.Name
-			logging.ComponentEvent("classifier", "mcp_category_tool_selected", map[string]interface{}{
-				"tool_name":      m.toolName,
-				"selection_mode": "auto_pattern_match",
-			})
 			return nil
 		}
 	}
@@ -342,13 +324,6 @@ func (m *MCPCategoryClassifier) ListCategories(ctx context.Context) (*CategoryMa
 		mapping.IdxToCategory[fmt.Sprintf("%d", idx)] = category
 	}
 
-	logging.ComponentEvent("classifier", "mcp_category_mapping_loaded", map[string]interface{}{
-		"tool_name":               m.toolName,
-		"categories":              len(response.Categories),
-		"system_prompt_count":     len(response.CategorySystemPrompts),
-		"categories_with_prompts": len(response.CategorySystemPrompts) > 0,
-	})
-
 	return mapping, nil
 }
 
@@ -392,9 +367,6 @@ func (c *Classifier) initializeMCPCategoryClassifier() error {
 		if classifier, ok := c.mcpCategoryInitializer.(*MCPCategoryClassifier); ok {
 			toolName = classifier.toolName
 		}
-		logging.ComponentDebugEvent("classifier", "mcp_category_mapping_load_started", map[string]interface{}{
-			"tool_name": toolName,
-		})
 
 		// Create a context with timeout for the list_categories call
 		ctx := context.Background()
@@ -412,9 +384,6 @@ func (c *Classifier) initializeMCPCategoryClassifier() error {
 
 		// Store the category mapping
 		c.CategoryMapping = categoryMapping
-		logging.ComponentEvent("classifier", "mcp_category_mapping_attached", map[string]interface{}{
-			"categories": c.CategoryMapping.GetCategoryCount(),
-		})
 	}
 	return nil
 }
@@ -442,9 +411,6 @@ func (c *Classifier) classifyCategoryWithEntropyMCP(text string) (string, float6
 	if err != nil {
 		return "", 0.0, entropy.ReasoningDecision{}, fmt.Errorf("MCP classification error: %w", err)
 	}
-
-	logging.Infof("MCP classification result: class=%d, confidence=%.4f, entropy_available=%t",
-		result.Class, result.Confidence, len(result.Probabilities) > 0)
 
 	// Get category names for all classes and translate to generic names when configured
 	categoryNames := make([]string, len(result.Probabilities))
@@ -506,7 +472,6 @@ func (c *Classifier) classifyCategoryWithEntropyMCP(text string) (string, float6
 		metrics.RecordProbabilityDistributionQuality("sum_check", "valid")
 	} else {
 		metrics.RecordProbabilityDistributionQuality("sum_check", "invalid")
-		logging.Warnf("MCP probability distribution sum is %.3f (should be ~1.0)", probSum)
 	}
 
 	// Check for negative probabilities
@@ -548,9 +513,6 @@ func (c *Classifier) classifyCategoryWithEntropyMCP(text string) (string, float6
 			fallbackCategory = "other"
 		}
 
-		logging.Infof("MCP classification confidence (%.4f) below threshold (%.4f), falling back to category: %s",
-			result.Confidence, threshold, fallbackCategory)
-
 		// Record the fallback category as a signal match
 		metrics.RecordSignalMatch(config.SignalTypeKeyword, fallbackCategory)
 
@@ -577,9 +539,6 @@ func (c *Classifier) classifyCategoryWithEntropyMCP(text string) (string, float6
 
 	// Record the category as a signal match
 	metrics.RecordSignalMatch(config.SignalTypeKeyword, genericCategory)
-
-	logging.Infof("MCP classified as category: %s (mmlu=%s), reasoning_decision: use=%t, confidence=%.3f, reason=%s",
-		genericCategory, categoryName, reasoningDecision.UseReasoning, reasoningDecision.Confidence, reasoningDecision.DecisionReason)
 
 	return genericCategory, float64(result.Confidence), reasoningDecision, nil
 }

@@ -6,25 +6,21 @@ import (
 	"strings"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 // SelectBestModelForCategory selects the best model from a decision based on score and TTFT
 func (c *Classifier) SelectBestModelForCategory(categoryName string) string {
 	decision := c.findDecision(categoryName)
 	if decision == nil {
-		logging.Warnf("Could not find matching decision %s in config, using default model", categoryName)
 		return c.Config.DefaultModel
 	}
 
-	bestModel, bestScore := c.selectBestModelInternalForDecision(decision, nil)
+	bestModel, _ := c.selectBestModelInternalForDecision(decision, nil)
 
 	if bestModel == "" {
-		logging.Warnf("No models found for decision %s, using default model", categoryName)
 		return c.Config.DefaultModel
 	}
 
-	logging.Infof("Selected model %s for decision %s with score %.4f", bestModel, categoryName, bestScore)
 	return bestModel
 }
 
@@ -81,7 +77,6 @@ func (c *Classifier) selectBestModelInternalForDecision(decision *config.Decisio
 			finalModelName := model
 			if modelRef.LoRAName != "" {
 				finalModelName = modelRef.LoRAName
-				logging.Debugf("Using LoRA adapter '%s' for base model '%s'", finalModelName, model)
 			}
 			bestModel = finalModelName
 		}
@@ -108,11 +103,9 @@ func (c *Classifier) SelectBestModelFromList(candidateModels []string, categoryN
 		})
 
 	if bestModel == "" {
-		logging.Warnf("No suitable model found from candidates for decision %s, using first candidate", categoryName)
 		return candidateModels[0]
 	}
 
-	logging.Debugf("Selected best model %s for decision %s from candidates (score=%.4f)", bestModel, categoryName, bestScore)
 	return bestModel
 }
 
@@ -200,12 +193,6 @@ func (c *Classifier) initializeHallucinationDetector() error {
 		detector.SetNLIConfig(&c.Config.HallucinationMitigation.NLIModel)
 		if err := detector.InitializeNLI(); err != nil {
 			// NLI is optional - log warning but don't fail
-			logging.ComponentWarnEvent("classifier", "hallucination_nli_init_failed", map[string]interface{}{
-				"model_ref":          c.Config.HallucinationMitigation.NLIModel.ModelID,
-				"error":              err.Error(),
-				"enhanced_detection": false,
-				"fallback_detection": "basic",
-			})
 		}
 	}
 
@@ -268,19 +255,6 @@ func (c *Classifier) initializePreferenceClassifier() error {
 	}
 
 	c.preferenceClassifier = classifier
-	mode := "external_llm"
-	modelRef := ""
-	if preferenceCfg.ContrastiveEnabled() {
-		mode = "contrastive"
-		modelRef = preferenceCfg.EmbeddingModel
-	} else if externalCfg != nil {
-		modelRef = externalCfg.ModelName
-	}
-	logging.ComponentEvent("classifier", "preference_classifier_initialized", map[string]interface{}{
-		"mode":      mode,
-		"model_ref": modelRef,
-		"routes":    len(c.Config.PreferenceRules),
-	})
 	return nil
 }
 
@@ -343,7 +317,6 @@ func (c *Classifier) DetectHallucinationWithNLI(context, question, answer string
 
 	// Check if NLI is initialized
 	if !c.hallucinationDetector.IsNLIInitialized() {
-		logging.Warnf("NLI model not initialized, falling back to basic hallucination detection")
 		// Fall back to basic detection and convert to enhanced format
 		basicResult, err := c.hallucinationDetector.Detect(context, question, answer)
 		if err != nil {
@@ -374,11 +347,6 @@ func (c *Classifier) DetectHallucinationWithNLI(context, question, answer string
 		return nil, fmt.Errorf("hallucination detection with NLI failed: %w", err)
 	}
 
-	if result != nil {
-		logging.Infof("Hallucination detection (NLI): detected=%v, confidence=%.3f, spans=%d",
-			result.HallucinationDetected, result.Confidence, len(result.Spans))
-	}
-
 	return result, nil
 }
 
@@ -392,11 +360,6 @@ func (c *Classifier) ClassifyFeedback(text string) (*FeedbackResult, error) {
 	result, err := c.feedbackDetector.Classify(text)
 	if err != nil {
 		return nil, fmt.Errorf("feedback classification failed: %w", err)
-	}
-
-	if result != nil {
-		logging.Infof("Feedback classification: feedback_type=%s, confidence=%.3f",
-			result.FeedbackType, result.Confidence)
 	}
 
 	return result, nil

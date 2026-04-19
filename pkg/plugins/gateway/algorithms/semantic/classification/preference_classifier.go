@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 // PreferenceResult represents the result of preference classification
@@ -125,8 +124,6 @@ func (p *PreferenceClassifier) Classify(conversationJSON string) (*PreferenceRes
 		if err != nil {
 			return nil, err
 		}
-		logging.Infof("Preference contrastive classification: preference=%s, latency=%.3fs",
-			result.Preference, time.Since(start).Seconds())
 		return result, nil
 	}
 
@@ -154,16 +151,10 @@ func (p *PreferenceClassifier) Classify(conversationJSON string) (*PreferenceRes
 
 	// Parse JSON response
 	output := resp.Choices[0].Message.Content
-	logging.Infof("Preference classification response: %s", output)
-
 	result, err := p.parsePreferenceOutput(output)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse preference output: %w", err)
 	}
-
-	logging.Infof("Preference classification: preference=%s, latency=%.3fs",
-		result.Preference, time.Since(start).Seconds())
-
 	return result, nil
 }
 

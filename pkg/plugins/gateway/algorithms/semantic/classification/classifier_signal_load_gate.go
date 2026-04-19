@@ -5,7 +5,6 @@ import (
 	"sync/atomic"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 var classifierSignalLoadGates sync.Map
@@ -32,13 +31,6 @@ func newSignalLoadGate(cfg config.BatchClassificationConfig) *signalLoadGate {
 	if gatedSlots < 1 {
 		gatedSlots = 1
 	}
-
-	logging.Infof(
-		"Signal evaluation load gate enabled: threshold=%d max_concurrency=%d gated_slots=%d",
-		threshold,
-		maxConcurrency,
-		gatedSlots,
-	)
 
 	return &signalLoadGate{
 		threshold: int64(threshold),

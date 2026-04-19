@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 // AuthzResult represents the result of authz signal classification.
@@ -139,15 +138,11 @@ func (c *AuthzClassifier) Classify(userID string, userGroups []string) (*AuthzRe
 			case "user":
 				if s.name == userID {
 					matched = true
-					logging.Infof("[Authz Signal] Binding %q matched: subject User %q == user ID %q → role %q",
-						rb.name, s.name, userID, rb.role)
 				}
 			case "group":
 				for _, ug := range userGroups {
 					if s.name == ug {
 						matched = true
-						logging.Infof("[Authz Signal] Binding %q matched: subject Group %q in user groups → role %q",
-							rb.name, s.name, rb.role)
 						break
 					}
 				}
@@ -166,12 +161,6 @@ func (c *AuthzClassifier) Classify(userID string, userGroups []string) (*AuthzRe
 			roleSet[rb.role] = true
 			matchedRoles = append(matchedRoles, rb.role)
 		}
-	}
-
-	if len(matchedRoles) == 0 {
-		logging.Infof("[Authz Signal] No roles matched for user %q (groups: %v)", userID, userGroups)
-	} else {
-		logging.Infof("[Authz Signal] Matched %d roles for user %q: %v", len(matchedRoles), userID, matchedRoles)
 	}
 
 	return &AuthzResult{

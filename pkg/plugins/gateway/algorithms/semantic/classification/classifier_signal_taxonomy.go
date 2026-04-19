@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/metrics"
 )
 
@@ -22,7 +21,6 @@ func (c *Classifier) evaluateKBSignals(results *SignalResults, mu *sync.Mutex, t
 	for name, classifier := range c.kbClassifiers {
 		classifyResult, err := classifier.Classify(text)
 		if err != nil {
-			logging.Warnf("[KB Signal] KB %q failed: %v", name, err)
 			continue
 		}
 		classifierResults[name] = classifyResult

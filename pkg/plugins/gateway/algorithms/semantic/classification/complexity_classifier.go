@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 // ComplexityClassifier performs complexity-based classification using embedding similarity.
@@ -73,53 +72,22 @@ func NewComplexityClassifier(
 		prototypeCfg:            prototypeCfg.WithDefaults(),
 	}
 
-	logging.ComponentEvent("classifier", "complexity_classifier_initialized", map[string]interface{}{
-		"model_type":       c.modelType,
-		"rules":            len(rules),
-		"image_candidates": c.hasImageCandidates,
-	})
-
 	if err := c.preloadCandidateEmbeddings(); err != nil {
-		logging.ComponentWarnEvent("classifier", "complexity_candidates_preload_failed", map[string]interface{}{
-			"model_type":       c.modelType,
-			"image_candidates": c.hasImageCandidates,
-			"error":            err.Error(),
-		})
 		return nil, err
 	}
-
 	return c, nil
 }
 
 // preloadCandidateEmbeddings computes embeddings for all hard/easy candidates (text + image).
 // Uses concurrent processing for better performance.
 func (c *ComplexityClassifier) preloadCandidateEmbeddings() error {
-	startTime := time.Now()
-	logging.ComponentDebugEvent("classifier", "complexity_candidates_preload_started", map[string]interface{}{
-		"model_type":       c.modelType,
-		"image_candidates": c.hasImageCandidates,
-	})
 	tasks := c.buildCandidateTasks()
 	if len(tasks) == 0 {
-		logging.ComponentDebugEvent("classifier", "complexity_candidates_preload_skipped", map[string]interface{}{
-			"reason": "no_candidates",
-		})
 		return nil
 	}
 
 	numWorkers := complexityWorkerCount(len(tasks))
 	successCount, firstError := c.collectCandidateEmbeddingResults(c.startCandidateEmbeddingWorkers(tasks, numWorkers))
-
-	elapsed := time.Since(startTime)
-	logging.ComponentEvent("classifier", "complexity_candidates_preloaded", map[string]interface{}{
-		"candidates":       successCount,
-		"total_candidates": len(tasks),
-		"model_type":       c.modelType,
-		"image_candidates": c.hasImageCandidates,
-		"workers":          numWorkers,
-		"elapsed_ms":       elapsed.Milliseconds(),
-	})
-
 	if firstError != nil {
 		return firstError
 	}
@@ -170,7 +138,6 @@ func (c *ComplexityClassifier) ClassifyDetailedWithImage(query string, imageURL 
 	results := make([]ComplexityRuleResult, 0, len(c.rules))
 	for _, rule := range c.rules {
 		result := c.classifyRuleWithEmbeddings(rule, queryEmbeddings, scoreOptions)
-		logComplexityRuleResult(rule, result, queryEmbeddings.image != nil)
 		results = append(results, result)
 	}
 	return results, nil
@@ -202,11 +169,5 @@ func (c *ComplexityClassifier) rebuildPrototypeBanks() {
 		c.easyPrototypeBanks[rule.Name] = easyBank
 		c.imageHardPrototypeBanks[rule.Name] = imageHardBank
 		c.imageEasyPrototypeBanks[rule.Name] = imageEasyBank
-		logPrototypeBankSummary("Complexity hard", rule.Name, hardBank)
-		logPrototypeBankSummary("Complexity easy", rule.Name, easyBank)
-		if len(imageHardExamples) > 0 || len(imageEasyExamples) > 0 {
-			logPrototypeBankSummary("Complexity image-hard", rule.Name, imageHardBank)
-			logPrototypeBankSummary("Complexity image-easy", rule.Name, imageEasyBank)
-		}
 	}
 }

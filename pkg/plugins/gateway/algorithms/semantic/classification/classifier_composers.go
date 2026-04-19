@@ -4,9 +4,8 @@ import (
 	"slices"
 	"strings"
 
-	candle_binding "github.com/vllm-project/semantic-router/candle-binding"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
+	candle_binding "github.com/vllm-project/semantic-router/candle-binding"
 )
 
 // applySignalComposers applies composer filters to signals that depend on other signals
@@ -37,7 +36,6 @@ func (c *Classifier) filterComplexityByComposer(
 		// Parse rule name (e.g., "code_complexity:hard" -> "code_complexity")
 		parts := strings.Split(matched, ":")
 		if len(parts) != 2 {
-			logging.Warnf("Invalid complexity rule format: %s", matched)
 			continue
 		}
 		ruleName := parts[0]
@@ -52,32 +50,20 @@ func (c *Classifier) filterComplexityByComposer(
 		}
 
 		if rule == nil {
-			logging.Warnf("Complexity rule config not found: %s", ruleName)
 			continue
 		}
 
 		// If no composer, keep the result (no filtering)
 		if rule.Composer == nil {
 			filtered = append(filtered, matched)
-			logging.Debugf("Complexity rule '%s' has no composer, keeping result", matched)
 			continue
 		}
 
 		// Evaluate composer conditions
 		if c.evaluateComposer(rule.Composer, allSignals) {
 			filtered = append(filtered, matched)
-			logging.ComponentDebugEvent("classifier", "complexity_rule_composer_evaluated", map[string]interface{}{
-				"rule":   matched,
-				"result": "passed",
-			})
-		} else {
-			logging.ComponentDebugEvent("classifier", "complexity_rule_composer_evaluated", map[string]interface{}{
-				"rule":   matched,
-				"result": "filtered_out",
-			})
 		}
 	}
-
 	return filtered
 }
 
@@ -114,7 +100,6 @@ func (c *Classifier) evalComposerNode(
 	case "NOT":
 		// Strictly unary: negate the single child's result.
 		if len(node.Conditions) != 1 {
-			logging.Warnf("Composer NOT operator requires exactly 1 child, got %d — treating as false", len(node.Conditions))
 			return false
 		}
 		return !c.evalComposerNode(node.Conditions[0], signals)
@@ -135,7 +120,6 @@ func (c *Classifier) evalComposerLeaf(
 ) bool {
 	matchedSignals, ok := composerLeafMatches(signals)[typ]
 	if !ok {
-		logging.Warnf("Unknown composer condition type: %s", typ)
 		return false
 	}
 	return slices.Contains(matchedSignals, name)
@@ -170,7 +154,6 @@ func (c *Classifier) GetQueryEmbedding(text string) []float64 {
 	// GetEmbedding returns ([]float32, error) with auto-detected dimension
 	embedding32, err := candle_binding.GetEmbedding(text, 0)
 	if err != nil {
-		logging.Debugf("Failed to get query embedding: %v", err)
 		return nil
 	}
 

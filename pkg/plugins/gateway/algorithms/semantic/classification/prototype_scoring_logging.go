@@ -3,34 +3,11 @@ package classification
 import (
 	"fmt"
 	"strings"
-
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 const prototypeMedoidPreviewLimit = 96
 
 func logPrototypeBankSummary(family string, owner string, bank *prototypeBank) {
-	representatives := bank.representatives()
-	if len(representatives) == 0 {
-		logging.Debugf("[%s] prototype bank owner=%s prototypes=0", family, owner)
-		return
-	}
-
-	medoids := make([]string, 0, len(representatives))
-	for _, representative := range representatives {
-		medoids = append(medoids, fmt.Sprintf("%q(cluster_size=%d, avg_similarity=%.3f)",
-			truncatePrototypePreview(representative.Text),
-			representative.ClusterSize,
-			representative.AvgSimilarity,
-		))
-	}
-
-	logging.Debugf("[%s] prototype bank owner=%s prototypes=%d medoids=[%s]",
-		family,
-		owner,
-		len(representatives),
-		strings.Join(medoids, ", "),
-	)
 }
 
 func truncatePrototypePreview(text string) string {

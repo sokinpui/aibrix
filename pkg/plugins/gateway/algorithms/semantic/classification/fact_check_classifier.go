@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"sync"
 
-	candle "github.com/vllm-project/semantic-router/candle-binding"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
+	candle "github.com/vllm-project/semantic-router/candle-binding"
 )
 
 // FactCheckResult represents the result of fact-check classification
@@ -83,11 +82,6 @@ func (c *FactCheckClassifier) Initialize() error {
 	}
 
 	c.initialized = true
-	logging.ComponentEvent("classifier", "fact_check_classifier_initialized", map[string]interface{}{
-		"backend":   backend,
-		"model_ref": c.config.ModelID,
-	})
-
 	return nil
 }
 
@@ -143,9 +137,6 @@ func (c *FactCheckClassifier) Classify(text string) (*FactCheckResult, error) {
 		label = FactCheckLabelNotNeeded
 		confidence = 1.0 - confidence // Invert confidence for the new label
 	}
-
-	logging.Debugf("Fact-check ML classification: text_len=%d, needs_fact_check=%v, confidence=%.3f",
-		len(text), needsFactCheck, confidence)
 
 	return &FactCheckResult{
 		NeedsFactCheck: needsFactCheck,

@@ -4,7 +4,6 @@ import (
 	"sync"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 type signalDispatch struct {
@@ -106,10 +105,6 @@ func runSignalDispatchers(dispatchers []signalDispatch, usedSignals map[string]b
 				dispatch.evaluate()
 			}(d)
 			continue
-		}
-
-		if !isSignalTypeUsed(usedSignals, d.signalType) {
-			logging.Debugf("[Signal Computation] %s signal not used in any decision, skipping evaluation", d.name)
 		}
 	}
 }

@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
 )
 
 type complexityCandidateTask struct {
@@ -138,13 +137,6 @@ func (c *ComplexityClassifier) collectCandidateEmbeddingResults(
 					res.err,
 				)
 			}
-			logging.Warnf(
-				"Failed to compute %s %s embedding for candidate '%s': %v",
-				complexityCandidateModality(res),
-				complexityCandidateKind(res),
-				res.candidate,
-				res.err,
-			)
 			continue
 		}
 		c.storeCandidateEmbeddingResult(res)
@@ -204,7 +196,6 @@ func (c *ComplexityClassifier) loadQueryEmbeddings(query string, imageURL string
 func (c *ComplexityClassifier) loadOptionalMultiModalTextEmbedding(query string) []float32 {
 	embedding, err := getMultiModalTextEmbedding(query, 0)
 	if err != nil {
-		logging.Warnf("[Complexity Signal] Failed to compute multimodal text embedding: %v", err)
 		return nil
 	}
 	return embedding
@@ -213,7 +204,6 @@ func (c *ComplexityClassifier) loadOptionalMultiModalTextEmbedding(query string)
 func (c *ComplexityClassifier) loadOptionalMultiModalImageEmbedding(imageURL string) []float32 {
 	embedding, err := getMultiModalImageEmbedding(imageURL, 0)
 	if err != nil {
-		logging.Warnf("[Complexity Signal] Failed to compute request image embedding: %v", err)
 		return nil
 	}
 	return embedding
@@ -290,34 +280,6 @@ func classifyComplexityDifficulty(threshold float32, signal float64) string {
 		return "easy"
 	}
 	return "medium"
-}
-
-func logComplexityRuleResult(
-	rule config.ComplexityRule,
-	result ComplexityRuleResult,
-	requestImageProvided bool,
-) {
-	if result.SignalSource == "image" || result.ImageHardScore > 0 || result.ImageEasyScore > 0 {
-		logging.Infof(
-			"Complexity rule '%s': text_signal=%.3f, image_signal=%.3f (src=%s), fused=%s(%.3f), difficulty=%s",
-			rule.Name,
-			result.TextMargin,
-			result.ImageMargin,
-			complexityImageSourceLabel(requestImageProvided),
-			result.SignalSource,
-			result.FusedMargin,
-			result.Difficulty,
-		)
-		return
-	}
-	logging.Infof(
-		"Complexity rule '%s': hard_score=%.3f, easy_score=%.3f, signal=%.3f, difficulty=%s",
-		rule.Name,
-		result.TextHardScore,
-		result.TextEasyScore,
-		result.FusedMargin,
-		result.Difficulty,
-	)
 }
 
 func complexityImageSourceLabel(requestImageProvided bool) string {

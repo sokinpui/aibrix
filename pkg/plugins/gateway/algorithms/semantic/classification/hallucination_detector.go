@@ -5,9 +5,8 @@ import (
 	"strings"
 	"sync"
 
-	candle "github.com/vllm-project/semantic-router/candle-binding"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
+	candle "github.com/vllm-project/semantic-router/candle-binding"
 )
 
 // NLILabel is an alias for candle.NLILabel
@@ -104,11 +103,6 @@ func (d *HallucinationDetector) Initialize() error {
 	}
 
 	d.initialized = true
-	logging.ComponentEvent("classifier", "hallucination_detector_initialized", map[string]interface{}{
-		"backend":   "candle",
-		"model_ref": d.config.ModelID,
-	})
-
 	return nil
 }
 
@@ -173,26 +167,18 @@ func (d *HallucinationDetector) Detect(context, question, answer string) (*Hallu
 
 		// Skip spans below minimum length
 		if spanTokensLen < minSpanLength {
-			logging.Debugf("Filtered span (too short): '%s' (%d tokens < %d)",
-				span.Text, spanTokensLen, minSpanLength)
 			continue
 		}
 
 		// Skip spans below confidence threshold
 		if span.Confidence < minSpanConfidence {
-			logging.Debugf("Filtered span (low confidence): '%s' (%.3f < %.3f)",
-				span.Text, span.Confidence, minSpanConfidence)
 			continue
 		}
 		result.UnsupportedSpans = append(result.UnsupportedSpans, span.Text)
 	}
-
 	if len(result.UnsupportedSpans) == 0 && len(candleResult.Spans) > 0 {
 		result.HallucinationDetected = false
 	}
-	logging.Debugf("Hallucination detection: hallucination=%v, confidence=%.3f, threshold=%.3f, spans=%d",
-		result.HallucinationDetected, result.Confidence, threshold, len(result.UnsupportedSpans))
-
 	return result, nil
 }
 
@@ -230,11 +216,6 @@ func (d *HallucinationDetector) InitializeNLI() error {
 	}
 
 	d.nliInitialized = true
-	logging.ComponentEvent("classifier", "hallucination_nli_initialized", map[string]interface{}{
-		"backend":   "candle",
-		"model_ref": d.nliConfig.ModelID,
-	})
-
 	return nil
 }
 
@@ -341,24 +322,18 @@ func (d *HallucinationDetector) DetectWithNLI(context, question, answer string) 
 
 		// Skip spans below minimum length
 		if spanTokensLen < minSpanLen {
-			logging.Debugf("Filtered span (too short): '%s' (%d tokens < %d)",
-				span.Text, spanTokensLen, minSpanLen)
 			filteredCount++
 			continue
 		}
 
 		// Skip spans below confidence threshold
 		if span.HallucinationConfidence < minSpanConfidence {
-			logging.Debugf("Filtered span (low confidence): '%s' (%.3f < %.3f)",
-				span.Text, span.HallucinationConfidence, minSpanConfidence)
 			filteredCount++
 			continue
 		}
 
 		// If NLI filtering is enabled, skip spans with high entailment confidence
 		if enableNLIFiltering && span.NLILabel == NLIEntailment && span.NLIConfidence >= nliEntailmentTheshold {
-			logging.Debugf("Filtered span (NLI entailment): '%s' (entailment confidence %.3f >= %.3f)",
-				span.Text, span.NLIConfidence, nliEntailmentTheshold)
 			filteredCount++
 			continue
 		}
@@ -390,11 +365,6 @@ func (d *HallucinationDetector) DetectWithNLI(context, question, answer string) 
 
 	if len(result.Spans) == 0 && len(candleResult.Spans) > 0 {
 		result.HallucinationDetected = false
-		logging.Infof("All %d spans filtered out - marking as no hallucination", filteredCount)
 	}
-
-	logging.Debugf("Enhanced hallucination detection: detected=%v, confidence=%.3f, hal_threshold=%.3f, nli_threshold=%.3f, spans=%d",
-		result.HallucinationDetected, result.Confidence, hallucinationThreshold, nliThreshold, len(result.Spans))
-
 	return result, nil
 }

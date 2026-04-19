@@ -3,9 +3,8 @@ package classification
 import (
 	"fmt"
 
-	candle_binding "github.com/vllm-project/semantic-router/candle-binding"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
+	candle_binding "github.com/vllm-project/semantic-router/candle-binding"
 )
 
 // Classifier handles text classification, model selection, and jailbreak detection functionality
@@ -195,12 +194,6 @@ func (c *Classifier) initializeCategoryClassifier() error {
 		return fmt.Errorf("not enough categories for classification, need at least 2, got %d", numClasses)
 	}
 
-	logging.ComponentEvent("classifier", "category_classifier_init_started", map[string]interface{}{
-		"model_ref": c.Config.CategoryModel.ModelID,
-		"classes":   numClasses,
-		"use_cpu":   c.Config.CategoryModel.UseCPU,
-	})
-
 	return c.categoryInitializer.Init(c.Config.CategoryModel.ModelID, c.Config.CategoryModel.UseCPU, numClasses)
 }
 
@@ -235,10 +228,6 @@ func (c *Classifier) initializeJailbreakClassifier() error {
 	// Skip initialization if using vLLM (no Candle model to initialize)
 	if c.Config.PromptGuard.UseVLLM {
 		externalCfg := c.Config.FindExternalModelByRole(config.ModelRoleGuardrail)
-		logging.ComponentEvent("classifier", "jailbreak_detector_init_started", map[string]interface{}{
-			"mode":      "vllm",
-			"model_ref": externalCfg.ModelName,
-		})
 		return nil
 	}
 
@@ -251,13 +240,6 @@ func (c *Classifier) initializeJailbreakClassifier() error {
 	if numClasses < 2 {
 		return fmt.Errorf("not enough jailbreak types for classification, need at least 2, got %d", numClasses)
 	}
-
-	logging.ComponentEvent("classifier", "jailbreak_detector_init_started", map[string]interface{}{
-		"mode":      "candle",
-		"model_ref": c.Config.PromptGuard.ModelID,
-		"classes":   numClasses,
-		"use_cpu":   c.Config.PromptGuard.UseCPU,
-	})
 
 	return c.jailbreakInitializer.Init(c.Config.PromptGuard.ModelID, c.Config.PromptGuard.UseCPU, numClasses)
 }
@@ -285,7 +267,6 @@ func (c *Classifier) CheckForJailbreakWithThreshold(text string, threshold float
 	if err != nil {
 		return false, "", 0.0, fmt.Errorf("jailbreak classification failed: %w", err)
 	}
-	logging.Debugf("Jailbreak classification result: %v", result)
 
 	// Get the jailbreak type name from the class index
 	jailbreakType, ok := c.JailbreakMapping.GetJailbreakTypeFromIndex(result.Class)
@@ -295,11 +276,6 @@ func (c *Classifier) CheckForJailbreakWithThreshold(text string, threshold float
 
 	// Check if confidence meets threshold and indicates jailbreak
 	isJailbreak := result.Confidence >= threshold && jailbreakType == "jailbreak"
-
-	if isJailbreak {
-		logging.Warnf("JAILBREAK DETECTED: '%s' (confidence: %.3f, threshold: %.3f)",
-			jailbreakType, result.Confidence, threshold)
-	}
 
 	return isJailbreak, jailbreakType, result.Confidence, nil
 }
@@ -325,7 +301,6 @@ func (c *Classifier) AnalyzeContentForJailbreakWithThreshold(contentList []strin
 
 		isJailbreak, jailbreakType, confidence, err := c.CheckForJailbreakWithThreshold(content, threshold)
 		if err != nil {
-			logging.Errorf("Error analyzing content %d: %v", i, err)
 			continue
 		}
 
@@ -362,12 +337,6 @@ func (c *Classifier) initializePIIClassifier() error {
 	if numPIIClasses < 2 {
 		return fmt.Errorf("not enough PII types for classification, need at least 2, got %d", numPIIClasses)
 	}
-
-	logging.ComponentEvent("classifier", "pii_detector_init_started", map[string]interface{}{
-		"model_ref": c.Config.PIIModel.ModelID,
-		"classes":   numPIIClasses,
-		"use_cpu":   c.Config.PIIModel.UseCPU,
-	})
 
 	// Pass numClasses to support auto-detection
 	return c.piiInitializer.Init(c.Config.PIIModel.ModelID, c.Config.PIIModel.UseCPU, numPIIClasses)

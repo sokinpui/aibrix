@@ -6,9 +6,8 @@ import (
 	"strings"
 	"unicode"
 
-	nlp_binding "github.com/vllm-project/semantic-router/nlp-binding"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/logging"
+	nlp_binding "github.com/vllm-project/semantic-router/nlp-binding"
 )
 
 // preppedKeywordRule stores preprocessed keywords for efficient regex matching.
@@ -116,8 +115,6 @@ func NewKeywordClassifier(cfgRules []config.KeywordRule) (*KeywordClassifier, er
 				return nil, fmt.Errorf("failed to add BM25 rule %q: %w", rule.Name, err)
 			}
 			kc.ruleOrder = append(kc.ruleOrder, ruleRef{method: "bm25", name: rule.Name})
-			logging.Debugf("Keyword rule %q using BM25 method (threshold=%.2f, keywords=%d)",
-				rule.Name, threshold, len(rule.Keywords))
 
 		case "ngram":
 			threshold := rule.NgramThreshold
@@ -135,8 +132,6 @@ func NewKeywordClassifier(cfgRules []config.KeywordRule) (*KeywordClassifier, er
 				return nil, fmt.Errorf("failed to add N-gram rule %q: %w", rule.Name, err)
 			}
 			kc.ruleOrder = append(kc.ruleOrder, ruleRef{method: "ngram", name: rule.Name})
-			logging.Debugf("Keyword rule %q using N-gram method (threshold=%.2f, arity=%d, keywords=%d)",
-				rule.Name, threshold, arity, len(rule.Keywords))
 
 		case "regex":
 			preppedRule, err := prepRegexRule(rule)
@@ -145,8 +140,6 @@ func NewKeywordClassifier(cfgRules []config.KeywordRule) (*KeywordClassifier, er
 			}
 			kc.regexRules = append(kc.regexRules, preppedRule)
 			kc.ruleOrder = append(kc.ruleOrder, ruleRef{method: "regex", name: rule.Name})
-			logging.Debugf("Keyword rule %q using regex method (keywords=%d, fuzzy=%v)",
-				rule.Name, len(rule.Keywords), rule.FuzzyMatch)
 		}
 	}
 
@@ -195,13 +188,11 @@ func prepRegexRule(rule config.KeywordRule) (preppedKeywordRule, error) {
 		var err error
 		preppedRule.CompiledRegexpsCS[j], err = regexp.Compile(patternCS)
 		if err != nil {
-			logging.Errorf("Failed to compile case-sensitive regex for keyword %q: %v", keyword, err)
 			return preppedKeywordRule{}, err
 		}
 
 		preppedRule.CompiledRegexpsCI[j], err = regexp.Compile(patternCI)
 		if err != nil {
-			logging.Errorf("Failed to compile case-insensitive regex for keyword %q: %v", keyword, err)
 			return preppedKeywordRule{}, err
 		}
 	}
@@ -282,7 +273,6 @@ func (c *KeywordClassifier) ClassifyWithKeywordsAndCount(text string) (string, [
 			return "", nil, 0, 0, err
 		}
 		if match.matched {
-			logRuleMatch(ref.method, match.ruleName, match.keywords, match.matchCount, match.totalKeywords)
 			return match.ruleName, match.keywords, match.matchCount, match.totalKeywords, nil
 		}
 	}
@@ -342,22 +332,6 @@ func (c *KeywordClassifier) classifyRegexRule(text string, regexIdx *int) (ruleM
 		matchCount:    matchCount,
 		totalKeywords: len(rule.OriginalKeywords),
 	}, nil
-}
-
-func logRuleMatch(method, ruleName string, keywords []string, matchCount, totalKeywords int) {
-	prefix := "Keyword-based"
-	switch method {
-	case "bm25":
-		prefix = "BM25 keyword"
-	case "ngram":
-		prefix = "N-gram keyword"
-	}
-	if len(keywords) > 0 {
-		logging.Infof("%s classification matched rule %q with keywords: %v (%d/%d matched)",
-			prefix, ruleName, keywords, matchCount, totalKeywords)
-		return
-	}
-	logging.Infof("%s classification matched rule %q with a NOR rule.", prefix, ruleName)
 }
 
 // matchesWithCount checks if the text matches the given keyword rule.
