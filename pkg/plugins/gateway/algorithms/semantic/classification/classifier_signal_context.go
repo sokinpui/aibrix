@@ -10,19 +10,17 @@ import (
 	"time"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/metrics"
-	candle_binding "github.com/vllm-project/semantic-router/candle-binding"
 )
 
 // cachedJailbreakResult stores a cached jailbreak classification result.
 type cachedJailbreakResult struct {
-	result candle_binding.ClassResult
+	result InferenceClassResult
 	err    error
 }
 
 // cachedPIIResult stores a cached PII token classification result.
 type cachedPIIResult struct {
-	result candle_binding.TokenClassificationResult
+	result InferenceTokenResult
 	err    error
 }
 
@@ -109,10 +107,6 @@ func (c *Classifier) evaluateKeywordSignal(results *SignalResults, mu *sync.Mute
 	start := time.Now()
 	category, keywords, err := c.keywordClassifier.ClassifyWithKeywords(text)
 	elapsed := time.Since(start)
-	latencySeconds := elapsed.Seconds()
-
-	// Record signal extraction metrics
-	metrics.RecordSignalExtraction(config.SignalTypeKeyword, category, latencySeconds)
 
 	// Record metrics (use microseconds for better precision)
 	results.Metrics.Keyword.ExecutionTimeMs = float64(elapsed.Microseconds()) / 1000.0
@@ -120,9 +114,6 @@ func (c *Classifier) evaluateKeywordSignal(results *SignalResults, mu *sync.Mute
 
 	if err != nil {
 	} else if category != "" {
-		// Record signal match
-		metrics.RecordSignalMatch(config.SignalTypeKeyword, category)
-
 		mu.Lock()
 		results.MatchedKeywordRules = append(results.MatchedKeywordRules, category)
 		results.MatchedKeywords = append(results.MatchedKeywords, keywords...)
@@ -161,8 +152,6 @@ func (c *Classifier) evaluateEmbeddingSignal(results *SignalResults, mu *sync.Mu
 		results.SignalValues["embedding:"+score.Name+":prototype_count"] = float64(score.PrototypeCount)
 	}
 	for _, mr := range detailedResult.Matches {
-		metrics.RecordSignalExtraction(config.SignalTypeEmbedding, mr.RuleName, elapsed.Seconds())
-		metrics.RecordSignalMatch(config.SignalTypeEmbedding, mr.RuleName)
 		results.MatchedEmbeddingRules = append(results.MatchedEmbeddingRules, mr.RuleName)
 		results.SignalConfidences["embedding:"+mr.RuleName] = mr.Score
 	}
@@ -178,7 +167,7 @@ func (c *Classifier) evaluateDomainSignal(results *SignalResults, mu *sync.Mutex
 		if basicErr != nil {
 			err = basicErr
 		} else {
-			domainResult = candle_binding.ClassResultWithProbs{
+			domainResult = InferenceClassResultWithProbs{
 				Class:      basicResult.Class,
 				Confidence: basicResult.Confidence,
 			}
@@ -186,7 +175,6 @@ func (c *Classifier) evaluateDomainSignal(results *SignalResults, mu *sync.Mutex
 		}
 	}
 	elapsed := time.Since(start)
-	latencySeconds := elapsed.Seconds()
 
 	categoryName := ""
 	if err == nil {
@@ -194,8 +182,6 @@ func (c *Classifier) evaluateDomainSignal(results *SignalResults, mu *sync.Mutex
 			categoryName = c.translateMMLUToGeneric(name)
 		}
 	}
-
-	metrics.RecordSignalExtraction(config.SignalTypeDomain, categoryName, latencySeconds)
 
 	// Record metrics
 	results.Metrics.Domain.ExecutionTimeMs = float64(elapsed.Microseconds()) / 1000.0
@@ -207,7 +193,6 @@ func (c *Classifier) evaluateDomainSignal(results *SignalResults, mu *sync.Mutex
 		matched := c.matchDomainCategories(domainResult, categoryName)
 		mu.Lock()
 		for _, cat := range matched {
-			metrics.RecordSignalMatch(config.SignalTypeDomain, cat.Category)
 			results.MatchedDomainRules = append(results.MatchedDomainRules, cat.Category)
 			results.SignalConfidences["domain:"+cat.Category] = float64(cat.Probability)
 		}
@@ -219,16 +204,12 @@ func (c *Classifier) evaluateFactCheckSignal(results *SignalResults, mu *sync.Mu
 	start := time.Now()
 	factCheckResult, err := c.ClassifyFactCheck(text)
 	elapsed := time.Since(start)
-	latencySeconds := elapsed.Seconds()
 
 	// Determine which signal to output based on classification result
 	signalName := "no_fact_check_needed"
 	if err == nil && factCheckResult != nil && factCheckResult.NeedsFactCheck {
 		signalName = "needs_fact_check"
 	}
-
-	// Record signal extraction metrics
-	metrics.RecordSignalExtraction(config.SignalTypeFactCheck, signalName, latencySeconds)
 
 	// Record metrics (use microseconds for better precision)
 	results.Metrics.FactCheck.ExecutionTimeMs = float64(elapsed.Microseconds()) / 1000.0
@@ -241,9 +222,6 @@ func (c *Classifier) evaluateFactCheckSignal(results *SignalResults, mu *sync.Mu
 		// Check if this signal is defined in fact_check_rules
 		for _, rule := range c.Config.FactCheckRules {
 			if rule.Name == signalName {
-				// Record signal match
-				metrics.RecordSignalMatch(config.SignalTypeFactCheck, rule.Name)
-
 				mu.Lock()
 				results.MatchedFactCheckRules = append(results.MatchedFactCheckRules, rule.Name)
 				mu.Unlock()
@@ -261,16 +239,12 @@ func (c *Classifier) evaluateUserFeedbackSignal(results *SignalResults, mu *sync
 	start := time.Now()
 	feedbackResult, err := c.ClassifyFeedback(text)
 	elapsed := time.Since(start)
-	latencySeconds := elapsed.Seconds()
 
 	// Use the feedback type directly as the signal name
 	signalName := ""
 	if err == nil && feedbackResult != nil {
 		signalName = feedbackResult.FeedbackType
 	}
-
-	// Record signal extraction metrics
-	metrics.RecordSignalExtraction(config.SignalTypeUserFeedback, signalName, latencySeconds)
 
 	// Record metrics (use microseconds for better precision)
 	results.Metrics.UserFeedback.ExecutionTimeMs = float64(elapsed.Microseconds()) / 1000.0
@@ -283,9 +257,6 @@ func (c *Classifier) evaluateUserFeedbackSignal(results *SignalResults, mu *sync
 		// Check if this signal is defined in user_feedback_rules
 		for _, rule := range c.Config.UserFeedbackRules {
 			if rule.Name == signalName {
-				// Record signal match
-				metrics.RecordSignalMatch(config.SignalTypeUserFeedback, rule.Name)
-
 				mu.Lock()
 				results.MatchedUserFeedbackRules = append(results.MatchedUserFeedbackRules, rule.Name)
 				mu.Unlock()
@@ -315,8 +286,6 @@ func (c *Classifier) evaluateReaskSignal(results *SignalResults, mu *sync.Mutex,
 		if match.MinSimilarity > bestConfidence {
 			bestConfidence = match.MinSimilarity
 		}
-		metrics.RecordSignalExtraction(config.SignalTypeReask, match.RuleName, elapsed.Seconds())
-		metrics.RecordSignalMatch(config.SignalTypeReask, match.RuleName)
 		results.MatchedReaskRules = append(results.MatchedReaskRules, match.RuleName)
 		results.SignalConfidences["reask:"+match.RuleName] = match.MinSimilarity
 		results.SignalValues["reask:"+match.RuleName] = float64(match.MatchedTurns)
@@ -332,16 +301,12 @@ func (c *Classifier) evaluatePreferenceSignal(results *SignalResults, mu *sync.M
 
 	preferenceResult, err := c.preferenceClassifier.Classify(conversationJSON)
 	elapsed := time.Since(start)
-	latencySeconds := elapsed.Seconds()
 
 	// Use the preference name directly as the signal name
 	preferenceName := ""
 	if err == nil && preferenceResult != nil {
 		preferenceName = preferenceResult.Preference
 	}
-
-	// Record signal extraction metrics
-	metrics.RecordSignalExtraction(config.SignalTypePreference, preferenceName, latencySeconds)
 
 	// Record metrics (use microseconds for better precision)
 	results.Metrics.Preference.ExecutionTimeMs = float64(elapsed.Microseconds()) / 1000.0
@@ -372,16 +337,12 @@ func (c *Classifier) evaluateLanguageSignal(results *SignalResults, mu *sync.Mut
 	start := time.Now()
 	languageResult, err := c.languageClassifier.Classify(text)
 	elapsed := time.Since(start)
-	latencySeconds := elapsed.Seconds()
 
 	// Use the language code directly as the signal name
 	languageCode := ""
 	if err == nil && languageResult != nil {
 		languageCode = languageResult.LanguageCode
 	}
-
-	// Record signal extraction metrics
-	metrics.RecordSignalExtraction(config.SignalTypeLanguage, languageCode, latencySeconds)
 
 	// Record metrics (use microseconds for better precision)
 	results.Metrics.Language.ExecutionTimeMs = float64(elapsed.Microseconds()) / 1000.0
@@ -394,9 +355,6 @@ func (c *Classifier) evaluateLanguageSignal(results *SignalResults, mu *sync.Mut
 		// Check if this language code is defined in language_rules
 		for _, rule := range c.Config.LanguageRules {
 			if rule.Name == languageCode {
-				// Record signal match
-				metrics.RecordSignalMatch(config.SignalTypeLanguage, rule.Name)
-
 				mu.Lock()
 				results.MatchedLanguageRules = append(results.MatchedLanguageRules, rule.Name)
 				mu.Unlock()
@@ -428,10 +386,6 @@ func (c *Classifier) evaluateComplexitySignal(results *SignalResults, mu *sync.M
 	start := time.Now()
 	classifyResults, err := c.complexityClassifier.ClassifyDetailedWithImage(text, imageURL)
 	elapsed := time.Since(start)
-	latencySeconds := elapsed.Seconds()
-
-	// Record signal extraction metrics for each matched rule
-	results.Metrics.Complexity.ExecutionTimeMs = float64(elapsed.Microseconds()) / 1000.0
 
 	if err != nil {
 		return
@@ -441,8 +395,6 @@ func (c *Classifier) evaluateComplexitySignal(results *SignalResults, mu *sync.M
 	mu.Lock()
 	for _, result := range classifyResults {
 		matchName := fmt.Sprintf("%s:%s", result.RuleName, result.Difficulty)
-		metrics.RecordSignalExtraction(config.SignalTypeComplexity, matchName, latencySeconds)
-		metrics.RecordSignalMatch(config.SignalTypeComplexity, matchName)
 		results.MatchedComplexityRules = append(results.MatchedComplexityRules, matchName)
 		results.SignalConfidences["complexity:"+matchName] = result.Confidence
 		results.SignalValues["complexity:"+result.RuleName+":text_hard_score"] = result.TextHardScore
@@ -464,12 +416,8 @@ func (c *Classifier) evaluateModalitySignal(results *SignalResults, mu *sync.Mut
 	start := time.Now()
 	modalityResult := c.classifyModality(text, &c.Config.ModalityDetector.ModalityDetectionConfig)
 	elapsed := time.Since(start)
-	latencySeconds := elapsed.Seconds()
 
 	signalName := modalityResult.Modality
-
-	// Record signal extraction metrics
-	metrics.RecordSignalExtraction(config.SignalTypeModality, signalName, latencySeconds)
 
 	// Record metrics
 	results.Metrics.Modality.ExecutionTimeMs = float64(elapsed.Microseconds()) / 1000.0
@@ -478,7 +426,6 @@ func (c *Classifier) evaluateModalitySignal(results *SignalResults, mu *sync.Mut
 	// Check if this signal name is defined in modality_rules
 	for _, rule := range c.Config.ModalityRules {
 		if strings.EqualFold(rule.Name, signalName) {
-			metrics.RecordSignalMatch(config.SignalTypeModality, rule.Name)
 			mu.Lock()
 			results.MatchedModalityRules = append(results.MatchedModalityRules, rule.Name)
 			mu.Unlock()
@@ -541,13 +488,10 @@ func (c *Classifier) evaluateJailbreakSignal(results *SignalResults, mu *sync.Mu
 	ruleWg.Wait()
 
 	elapsed := time.Since(start)
-	latencySeconds := elapsed.Seconds()
 	results.Metrics.Jailbreak.ExecutionTimeMs = float64(elapsed.Microseconds()) / 1000.0
 	if results.JailbreakConfidence > 0 {
 		results.Metrics.Jailbreak.Confidence = float64(results.JailbreakConfidence)
 	}
-
-	metrics.RecordSignalExtraction(config.SignalTypeJailbreak, "jailbreak_evaluated", latencySeconds)
 }
 
 func (c *Classifier) evaluateJailbreakRule(rule config.JailbreakRule, jailbreakText string, nonUserMessages []string, jailbreakCache map[string]cachedJailbreakResult, start time.Time, results *SignalResults, mu *sync.Mutex) {
@@ -590,9 +534,6 @@ func (c *Classifier) evaluateContrastiveJailbreakRule(rule config.JailbreakRule,
 		return
 	}
 
-	metrics.RecordSignalExtraction(config.SignalTypeJailbreak, rule.Name, time.Since(start).Seconds())
-	metrics.RecordSignalMatch(config.SignalTypeJailbreak, rule.Name)
-
 	confidence := analysisResult.MaxScore
 	mu.Lock()
 	results.MatchedJailbreakRules = append(results.MatchedJailbreakRules, rule.Name)
@@ -610,9 +551,6 @@ func (c *Classifier) evaluateBERTJailbreakRule(rule config.JailbreakRule, conten
 	if bestConf <= 0 {
 		return
 	}
-
-	metrics.RecordSignalExtraction(config.SignalTypeJailbreak, rule.Name, time.Since(start).Seconds())
-	metrics.RecordSignalMatch(config.SignalTypeJailbreak, rule.Name)
 
 	mu.Lock()
 	results.MatchedJailbreakRules = append(results.MatchedJailbreakRules, rule.Name)
@@ -701,13 +639,10 @@ func (c *Classifier) evaluatePIISignal(results *SignalResults, mu *sync.Mutex, p
 	ruleWg.Wait()
 
 	elapsed := time.Since(start)
-	latencySeconds := elapsed.Seconds()
 	results.Metrics.PII.ExecutionTimeMs = float64(elapsed.Microseconds()) / 1000.0
 	if results.PIIDetected {
 		results.Metrics.PII.Confidence = 1.0 // Binary: PII found or not
 	}
-
-	metrics.RecordSignalExtraction(config.SignalTypePII, "pii_evaluated", latencySeconds)
 }
 
 func (c *Classifier) evaluatePIIRule(rule config.PIIRule, piiText string, nonUserMessages []string, piiCache map[string]cachedPIIResult, start time.Time, results *SignalResults, mu *sync.Mutex) {
@@ -720,9 +655,6 @@ func (c *Classifier) evaluatePIIRule(rule config.PIIRule, piiText string, nonUse
 	deniedEntities := findDeniedEntities(entityTypes, rule.PIITypesAllowed)
 
 	if len(deniedEntities) > 0 {
-		metrics.RecordSignalExtraction(config.SignalTypePII, rule.Name, time.Since(start).Seconds())
-		metrics.RecordSignalMatch(config.SignalTypePII, rule.Name)
-
 		mu.Lock()
 		results.MatchedPIIRules = append(results.MatchedPIIRules, rule.Name)
 		results.PIIDetected = true

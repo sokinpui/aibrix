@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	candle_binding "github.com/vllm-project/semantic-router/candle-binding"
 )
 
 // applySignalComposers applies composer filters to signals that depend on other signals
@@ -152,7 +151,11 @@ func (c *Classifier) GetQueryEmbedding(text string) []float64 {
 
 	// Use the candle binding to get the embedding
 	// GetEmbedding returns ([]float32, error) with auto-detected dimension
-	embedding32, err := candle_binding.GetEmbedding(text, 0)
+	if GetEmbedding == nil {
+		return nil
+	}
+
+	embedding32, err := GetEmbedding(text, 0)
 	if err != nil {
 		return nil
 	}

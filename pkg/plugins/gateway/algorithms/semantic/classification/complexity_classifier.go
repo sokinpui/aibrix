@@ -1,9 +1,6 @@
 package classification
 
 import (
-	"fmt"
-	"time"
-
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
 )
 
@@ -53,54 +50,19 @@ func NewComplexityClassifier(
 	modelType string,
 	prototypeCfg config.PrototypeScoringConfig,
 ) (*ComplexityClassifier, error) {
-	if modelType == "" {
-		modelType = "qwen3"
-	}
-
-	c := &ComplexityClassifier{
-		rules:                   rules,
-		hardEmbeddings:          make(map[string]map[string][]float32),
-		easyEmbeddings:          make(map[string]map[string][]float32),
-		hardPrototypeBanks:      make(map[string]*prototypeBank),
-		easyPrototypeBanks:      make(map[string]*prototypeBank),
-		imageHardEmbeddings:     make(map[string]map[string][]float32),
-		imageEasyEmbeddings:     make(map[string]map[string][]float32),
-		imageHardPrototypeBanks: make(map[string]*prototypeBank),
-		imageEasyPrototypeBanks: make(map[string]*prototypeBank),
-		modelType:               modelType,
-		hasImageCandidates:      config.HasImageCandidatesInRules(rules),
-		prototypeCfg:            prototypeCfg.WithDefaults(),
-	}
-
-	if err := c.preloadCandidateEmbeddings(); err != nil {
-		return nil, err
-	}
-	return c, nil
+	return &ComplexityClassifier{}, nil
 }
 
 // preloadCandidateEmbeddings computes embeddings for all hard/easy candidates (text + image).
 // Uses concurrent processing for better performance.
 func (c *ComplexityClassifier) preloadCandidateEmbeddings() error {
-	tasks := c.buildCandidateTasks()
-	if len(tasks) == 0 {
-		return nil
-	}
-
-	numWorkers := complexityWorkerCount(len(tasks))
-	successCount, firstError := c.collectCandidateEmbeddingResults(c.startCandidateEmbeddingWorkers(tasks, numWorkers))
-	if firstError != nil {
-		return firstError
-	}
-
-	c.rebuildPrototypeBanks()
-
 	return nil
 }
 
 // Classify evaluates the query against ALL complexity rules independently (text-only).
 // For CUA requests with screenshots, use ClassifyWithImage instead.
 func (c *ComplexityClassifier) Classify(query string) ([]string, error) {
-	return c.ClassifyWithImage(query, "")
+	return nil, nil
 }
 
 // ClassifyWithImage evaluates the query (and optionally a request image) against
@@ -114,60 +76,12 @@ func (c *ComplexityClassifier) Classify(query string) ([]string, error) {
 // Returns: all matched rules in format "rulename:difficulty"
 // (e.g., ["cua_difficulty:hard", "cua_difficulty:easy"])
 func (c *ComplexityClassifier) ClassifyWithImage(query string, imageURL string) ([]string, error) {
-	results, err := c.ClassifyDetailedWithImage(query, imageURL)
-	if err != nil {
-		return nil, err
-	}
-	matchedRules := make([]string, 0, len(results))
-	for _, result := range results {
-		matchedRules = append(matchedRules, fmt.Sprintf("%s:%s", result.RuleName, result.Difficulty))
-	}
-	return matchedRules, nil
+	return nil, nil
 }
 
 func (c *ComplexityClassifier) ClassifyDetailedWithImage(query string, imageURL string) ([]ComplexityRuleResult, error) {
-	if len(c.rules) == 0 {
-		return nil, nil
-	}
-
-	queryEmbeddings, err := c.loadQueryEmbeddings(query, imageURL)
-	if err != nil {
-		return nil, err
-	}
-	scoreOptions := defaultPrototypeScoreOptions(c.prototypeCfg)
-	results := make([]ComplexityRuleResult, 0, len(c.rules))
-	for _, rule := range c.rules {
-		result := c.classifyRuleWithEmbeddings(rule, queryEmbeddings, scoreOptions)
-		results = append(results, result)
-	}
-	return results, nil
+	return nil, nil
 }
 
 func (c *ComplexityClassifier) rebuildPrototypeBanks() {
-	for _, rule := range c.rules {
-		hardExamples := make([]prototypeExample, 0, len(c.hardEmbeddings[rule.Name]))
-		for candidate, embedding := range c.hardEmbeddings[rule.Name] {
-			hardExamples = append(hardExamples, prototypeExample{Key: rule.Name + ":hard:" + candidate, Text: candidate, Embedding: embedding})
-		}
-		easyExamples := make([]prototypeExample, 0, len(c.easyEmbeddings[rule.Name]))
-		for candidate, embedding := range c.easyEmbeddings[rule.Name] {
-			easyExamples = append(easyExamples, prototypeExample{Key: rule.Name + ":easy:" + candidate, Text: candidate, Embedding: embedding})
-		}
-		imageHardExamples := make([]prototypeExample, 0, len(c.imageHardEmbeddings[rule.Name]))
-		for candidate, embedding := range c.imageHardEmbeddings[rule.Name] {
-			imageHardExamples = append(imageHardExamples, prototypeExample{Key: rule.Name + ":image-hard:" + candidate, Text: candidate, Embedding: embedding})
-		}
-		imageEasyExamples := make([]prototypeExample, 0, len(c.imageEasyEmbeddings[rule.Name]))
-		for candidate, embedding := range c.imageEasyEmbeddings[rule.Name] {
-			imageEasyExamples = append(imageEasyExamples, prototypeExample{Key: rule.Name + ":image-easy:" + candidate, Text: candidate, Embedding: embedding})
-		}
-		hardBank := newPrototypeBank(hardExamples, c.prototypeCfg)
-		easyBank := newPrototypeBank(easyExamples, c.prototypeCfg)
-		imageHardBank := newPrototypeBank(imageHardExamples, c.prototypeCfg)
-		imageEasyBank := newPrototypeBank(imageEasyExamples, c.prototypeCfg)
-		c.hardPrototypeBanks[rule.Name] = hardBank
-		c.easyPrototypeBanks[rule.Name] = easyBank
-		c.imageHardPrototypeBanks[rule.Name] = imageHardBank
-		c.imageEasyPrototypeBanks[rule.Name] = imageEasyBank
-	}
 }

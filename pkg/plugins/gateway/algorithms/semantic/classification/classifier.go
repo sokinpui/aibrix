@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	candle_binding "github.com/vllm-project/semantic-router/candle-binding"
 )
 
 // Classifier handles text classification, model selection, and jailbreak detection functionality
@@ -260,7 +259,7 @@ func (c *Classifier) CheckForJailbreakWithThreshold(text string, threshold float
 	}
 
 	// Use appropriate jailbreak classifier based on configuration
-	var result candle_binding.ClassResult
+	var result InferenceClassResult
 	var err error
 
 	result, err = c.jailbreakInference.Classify(text)

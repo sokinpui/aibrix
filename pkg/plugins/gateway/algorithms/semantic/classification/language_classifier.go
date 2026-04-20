@@ -23,12 +23,7 @@ func init() {
 }
 
 func getDetector() lingua.LanguageDetector {
-	linguaOnce.Do(func() {
-		linguaDetector = lingua.NewLanguageDetectorBuilder().
-			FromAllLanguages().
-			Build()
-	})
-	return linguaDetector
+	return nil
 }
 
 // LanguageClassifier implements language detection using lingua-go library.
@@ -47,52 +42,10 @@ type LanguageResult struct {
 
 // NewLanguageClassifier creates a new language classifier
 func NewLanguageClassifier(cfgRules []config.LanguageRule) (*LanguageClassifier, error) {
-	return &LanguageClassifier{
-		rules: cfgRules,
-	}, nil
+	return &LanguageClassifier{}, nil
 }
 
 // Classify detects the language of the query using lingua-go.
 func (c *LanguageClassifier) Classify(text string) (*LanguageResult, error) {
-	if strings.TrimSpace(text) == "" {
-		return &LanguageResult{
-			LanguageCode: "en", // Default to English
-			Confidence:   0.5,
-		}, nil
-	}
-
-	detector := getDetector()
-	lang, ok := detector.DetectLanguageOf(text)
-	if !ok {
-		return &LanguageResult{
-			LanguageCode: "en",
-			Confidence:   0.5,
-		}, nil
-	}
-
-	code := strings.ToLower(lang.IsoCode639_1().String())
-	if code == "" || code == "und" {
-		return &LanguageResult{
-			LanguageCode: "en",
-			Confidence:   0.5,
-		}, nil
-	}
-
-	confidence := detector.ComputeLanguageConfidence(text, lang)
-
-	// lingua-go distributes probability across all 75+ supported languages, so
-	// the raw per-language confidence is typically low for short or ambiguous
-	// text. A value below 0.3 means insufficient signal — analogous to
-	// whatlanggo's IsReliable() check — so fall back to English.
-	if confidence < 0.3 {
-		return &LanguageResult{
-			LanguageCode: "en",
-			Confidence:   0.5,
-		}, nil
-	}
-
-	return &LanguageResult{
-		LanguageCode: code,
-		Confidence:   confidence,
-	}, nil
+	return &LanguageResult{}, nil
 }

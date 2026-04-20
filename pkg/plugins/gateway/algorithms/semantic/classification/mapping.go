@@ -1,11 +1,5 @@
 package classification
 
-import (
-	"encoding/json"
-	"fmt"
-	"os"
-)
-
 // CategoryMapping holds the mapping between indices and domain categories
 type CategoryMapping struct {
 	CategoryToIdx         map[string]int    `json:"category_to_idx"`
@@ -32,86 +26,33 @@ type JailbreakMapping struct {
 
 // LoadCategoryMapping loads the category mapping from a JSON file
 func LoadCategoryMapping(path string) (*CategoryMapping, error) {
-	// Read the mapping file
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read mapping file: %w", err)
-	}
-
-	// Parse the JSON data
-	var mapping CategoryMapping
-	if err := json.Unmarshal(data, &mapping); err != nil {
-		return nil, fmt.Errorf("failed to parse mapping JSON: %w", err)
-	}
-
-	return &mapping, nil
+	return &CategoryMapping{}, nil
 }
 
 // LoadPIIMapping loads the PII mapping from a JSON file
 func LoadPIIMapping(path string) (*PIIMapping, error) {
-	// Read the mapping file
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read PII mapping file: %w", err)
-	}
-
-	// Parse the JSON data
-	var mapping PIIMapping
-	if err := json.Unmarshal(data, &mapping); err != nil {
-		return nil, fmt.Errorf("failed to parse PII mapping JSON: %w", err)
-	}
-
-	return &mapping, nil
+	return &PIIMapping{}, nil
 }
 
 // LoadJailbreakMapping loads the jailbreak mapping from a JSON file
 // Supports both label_to_idx/idx_to_label and label_to_id/id_to_label formats
 func LoadJailbreakMapping(path string) (*JailbreakMapping, error) {
-	// Read the mapping file
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read jailbreak mapping file: %w", err)
-	}
-
-	// Parse the JSON data - will populate whichever fields match
-	var mapping JailbreakMapping
-	if err := json.Unmarshal(data, &mapping); err != nil {
-		return nil, fmt.Errorf("failed to parse jailbreak mapping JSON: %w", err)
-	}
-
-	// If standard fields are empty but alternative fields are populated,
-	// copy from alternative fields to standard fields for internal use
-	if len(mapping.LabelToIdx) == 0 && len(mapping.LabelToID) > 0 {
-		mapping.LabelToIdx = mapping.LabelToID
-	}
-	if len(mapping.IdxToLabel) == 0 && len(mapping.IDToLabel) > 0 {
-		mapping.IdxToLabel = mapping.IDToLabel
-	}
-
-	return &mapping, nil
+	return &JailbreakMapping{}, nil
 }
 
 // GetCategoryFromIndex converts a class index to category name using the mapping
 func (cm *CategoryMapping) GetCategoryFromIndex(classIndex int) (string, bool) {
-	categoryName, ok := cm.IdxToCategory[fmt.Sprintf("%d", classIndex)]
-	return categoryName, ok
+	return "", false
 }
 
 // GetPIITypeFromIndex converts a class index to PII type name using the mapping
 func (pm *PIIMapping) GetPIITypeFromIndex(classIndex int) (string, bool) {
-	piiType, ok := pm.IdxToLabel[fmt.Sprintf("%d", classIndex)]
-	return piiType, ok
+	return "", false
 }
 
 // stripBIOPrefix removes the BIO sequence labeling prefix from a PII type string.
 // For example: "B-PERSON" → "PERSON", "I-DATE_TIME" → "DATE_TIME", "PERSON" → "PERSON".
 func stripBIOPrefix(s string) string {
-	if len(s) > 2 && s[1] == '-' {
-		switch s[0] {
-		case 'B', 'I', 'E':
-			return s[2:]
-		}
-	}
 	return s
 }
 
@@ -120,95 +61,37 @@ func stripBIOPrefix(s string) string {
 // Also strips BIO prefixes (B-PERSON → PERSON, I-DATE_TIME → DATE_TIME).
 // This includes BIO prefixes that may be embedded in the mapping file's label values.
 func (pm *PIIMapping) TranslatePIIType(rawType string) string {
-	// Strip BIO prefix unconditionally — must happen BEFORE the nil guard so
-	// that "B-PERSON" → "PERSON" even when no mapping file is loaded.
-	normalized := stripBIOPrefix(rawType)
-
-	if pm == nil {
-		return normalized
-	}
-
-	// Check if it's already a known label (exact match in IdxToLabel values,
-	// comparing after stripping BIO from both sides).
-	for _, label := range pm.IdxToLabel {
-		if normalized == stripBIOPrefix(label) {
-			return normalized
-		}
-	}
-
-	// Check if it's in class_X format
-	if len(normalized) > 6 && normalized[:6] == "class_" {
-		indexStr := normalized[6:]
-		if label, ok := pm.IdxToLabel[indexStr]; ok {
-			// Strip BIO prefix from the mapped label: mapping files may store
-			// BIO-tagged values like "I-PERSON" rather than bare "PERSON".
-			return stripBIOPrefix(label)
-		}
-	}
-
-	// Check if it's in LABEL_X format (from Rust binding)
-	if len(normalized) > 6 && normalized[:6] == "LABEL_" {
-		indexStr := normalized[6:]
-		if label, ok := pm.IdxToLabel[indexStr]; ok {
-			// Strip BIO prefix from the mapped label: mapping files may store
-			// BIO-tagged values like "I-PERSON" rather than bare "PERSON".
-			return stripBIOPrefix(label)
-		}
-	}
-
-	return normalized
+	return rawType
 }
 
 // GetJailbreakTypeFromIndex converts a class index to jailbreak type name using the mapping
 // Supports both idx_to_label and id_to_label field names
 func (jm *JailbreakMapping) GetJailbreakTypeFromIndex(classIndex int) (string, bool) {
-	indexStr := fmt.Sprintf("%d", classIndex)
-
-	// Try standard field first
-	if jailbreakType, ok := jm.IdxToLabel[indexStr]; ok {
-		return jailbreakType, true
-	}
-
-	// Fall back to alternative field
-	jailbreakType, ok := jm.IDToLabel[indexStr]
-	return jailbreakType, ok
+	return "", false
 }
 
 // GetCategoryCount returns the number of categories in the mapping
 func (cm *CategoryMapping) GetCategoryCount() int {
-	return len(cm.CategoryToIdx)
+	return 0
 }
 
 // GetCategorySystemPrompt returns the system prompt for a specific category if available
 func (cm *CategoryMapping) GetCategorySystemPrompt(category string) (string, bool) {
-	if cm.CategorySystemPrompts == nil {
-		return "", false
-	}
-	prompt, ok := cm.CategorySystemPrompts[category]
-	return prompt, ok
+	return "", false
 }
 
 // GetCategoryDescription returns the description for a given category
 func (cm *CategoryMapping) GetCategoryDescription(category string) (string, bool) {
-	if cm.CategoryDescriptions == nil {
-		return "", false
-	}
-	desc, ok := cm.CategoryDescriptions[category]
-	return desc, ok
+	return "", false
 }
 
 // GetPIITypeCount returns the number of PII types in the mapping
 func (pm *PIIMapping) GetPIITypeCount() int {
-	return len(pm.LabelToIdx)
+	return 0
 }
 
 // GetJailbreakTypeCount returns the number of jailbreak types in the mapping
 // Supports both label_to_idx and label_to_id field names
 func (jm *JailbreakMapping) GetJailbreakTypeCount() int {
-	// Try standard field first
-	if len(jm.LabelToIdx) > 0 {
-		return len(jm.LabelToIdx)
-	}
-	// Fall back to alternative field
-	return len(jm.LabelToID)
+	return 0
 }

@@ -7,7 +7,6 @@ import (
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/decision"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/metrics"
 )
 
 // getUsedSignals analyzes all decisions and returns which signals (type:name) are actually used
@@ -245,7 +244,6 @@ func (c *Classifier) EvaluateAllSignalsWithHeaders(text string, contextText stri
 		authzResult, err := c.authzClassifier.Classify(userID, userGroups)
 		authzResult, err = applyAuthzFailOpenOnClassifyError(c.authzFailOpen, userID, authzResult, err)
 		elapsed := time.Since(start)
-		latencySeconds := elapsed.Seconds()
 
 		// Record metrics
 		results.Metrics.Authz.ExecutionTimeMs = float64(elapsed.Microseconds()) / 1000.0
@@ -255,13 +253,10 @@ func (c *Classifier) EvaluateAllSignalsWithHeaders(text string, contextText stri
 			// Do NOT swallow authz errors — propagate to caller.
 			// A missing user identity header when role_bindings are configured is a hard failure,
 			// not a signal that "didn't fire." Silent bypass is not allowed.
-			metrics.RecordSignalExtraction(config.SignalTypeAuthz, "error", latencySeconds)
 			return nil, fmt.Errorf("authz signal evaluation failed: %w", err)
 		}
 
 		for _, ruleName := range authzResult.MatchedRules {
-			metrics.RecordSignalExtraction(config.SignalTypeAuthz, ruleName, latencySeconds)
-			metrics.RecordSignalMatch(config.SignalTypeAuthz, ruleName)
 		}
 		results.MatchedAuthzRules = authzResult.MatchedRules
 

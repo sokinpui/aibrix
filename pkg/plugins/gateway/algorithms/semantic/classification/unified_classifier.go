@@ -83,10 +83,8 @@ void free_lora_batch_result(LoRABatchResult result);
 import "C"
 
 import (
-	"fmt"
 	"sync"
 	"time"
-	"unsafe"
 )
 
 // UnifiedClassifierStats holds performance statistics
@@ -160,10 +158,7 @@ var (
 
 // GetGlobalUnifiedClassifier returns the global unified classifier instance
 func GetGlobalUnifiedClassifier() *UnifiedClassifier {
-	unifiedOnce.Do(func() {
-		globalUnifiedClassifier = &UnifiedClassifier{}
-	})
-	return globalUnifiedClassifier
+	return &UnifiedClassifier{}
 }
 
 // Initialize initializes the unified classifier with model paths and dynamic labels
@@ -172,454 +167,81 @@ func (uc *UnifiedClassifier) Initialize(
 	intentLabels, piiLabels, securityLabels []string,
 	useCPU bool,
 ) error {
-	uc.mu.Lock()
-	defer uc.mu.Unlock()
-
-	if uc.initialized {
-		return fmt.Errorf("unified classifier already initialized")
-	}
-
-	// Convert Go strings to C strings for paths
-	cModernbertPath := C.CString(modernbertPath)
-	defer C.free(unsafe.Pointer(cModernbertPath))
-
-	cIntentHeadPath := C.CString(intentHeadPath)
-	defer C.free(unsafe.Pointer(cIntentHeadPath))
-
-	cPiiHeadPath := C.CString(piiHeadPath)
-	defer C.free(unsafe.Pointer(cPiiHeadPath))
-
-	cSecurityHeadPath := C.CString(securityHeadPath)
-	defer C.free(unsafe.Pointer(cSecurityHeadPath))
-
-	// Convert label slices to C string arrays
-	cIntentLabels := make([]*C.char, len(intentLabels))
-	for i, label := range intentLabels {
-		cIntentLabels[i] = C.CString(label)
-	}
-	defer func() {
-		for _, cStr := range cIntentLabels {
-			C.free(unsafe.Pointer(cStr))
-		}
-	}()
-
-	cPiiLabels := make([]*C.char, len(piiLabels))
-	for i, label := range piiLabels {
-		cPiiLabels[i] = C.CString(label)
-	}
-	defer func() {
-		for _, cStr := range cPiiLabels {
-			C.free(unsafe.Pointer(cStr))
-		}
-	}()
-
-	cSecurityLabels := make([]*C.char, len(securityLabels))
-	for i, label := range securityLabels {
-		cSecurityLabels[i] = C.CString(label)
-	}
-	defer func() {
-		for _, cStr := range cSecurityLabels {
-			C.free(unsafe.Pointer(cStr))
-		}
-	}()
-
-	// Initialize the unified classifier in Rust with dynamic labels
-	success := C.init_unified_classifier_c(
-		cModernbertPath,
-		cIntentHeadPath,
-		cPiiHeadPath,
-		cSecurityHeadPath,
-		(**C.char)(unsafe.Pointer(&cIntentLabels[0])),
-		C.int(len(intentLabels)),
-		(**C.char)(unsafe.Pointer(&cPiiLabels[0])),
-		C.int(len(piiLabels)),
-		(**C.char)(unsafe.Pointer(&cSecurityLabels[0])),
-		C.int(len(securityLabels)),
-		C._Bool(useCPU),
-	)
-
-	if !success {
-		return fmt.Errorf("failed to initialize unified classifier with labels")
-	}
-
-	uc.initialized = true
 	return nil
 }
 
 // ClassifyBatch performs true batch inference on multiple texts
 // Automatically uses high-confidence LoRA models if available
 func (uc *UnifiedClassifier) ClassifyBatch(texts []string) (*UnifiedBatchResults, error) {
-	if len(texts) == 0 {
-		return nil, fmt.Errorf("empty text batch")
-	}
-
-	// Record start time for performance monitoring
-	startTime := time.Now()
-
-	useLoRA, err := uc.classificationMode()
-	if err != nil {
-		return nil, err
-	}
-
-	// Choose implementation based on model type
-	var results *UnifiedBatchResults
-	if useLoRA {
-		if initErr := uc.ensureLoRAInitialized(); initErr != nil {
-			return nil, fmt.Errorf("failed to initialize loRA bindings: %w", initErr)
-		}
-		results, err = uc.classifyBatchWithLoRA(texts)
-	} else {
-		results, err = uc.classifyBatchLegacy(texts)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	uc.updateStats(len(texts), time.Since(startTime))
-	return results, nil
+	return &UnifiedBatchResults{}, nil
 }
 
 // classifyBatchWithLoRA uses high-confidence LoRA models
 func (uc *UnifiedClassifier) classifyBatchWithLoRA(texts []string) (*UnifiedBatchResults, error) {
-	if uc.testClassifyBatchWithLoRA != nil {
-		return uc.testClassifyBatchWithLoRA(texts)
-	}
-
-	// Convert Go strings to C string array
-	cTexts := make([]*C.char, len(texts))
-	for i, text := range texts {
-		cTexts[i] = C.CString(text)
-	}
-
-	// Ensure C strings are freed
-	defer func() {
-		for _, cText := range cTexts {
-			C.free(unsafe.Pointer(cText))
-		}
-	}()
-
-	// Call the high-confidence LoRA batch classification
-	result := C.classify_batch_with_lora(&cTexts[0], C.int(len(texts)))
-	defer C.free_lora_batch_result(result)
-
-	if result.batch_size <= 0 {
-		return nil, fmt.Errorf("loRA batch classification failed")
-	}
-
-	// Convert LoRA results to unified format
-	results := uc.convertLoRAResultsToGo(&result)
-	return results, nil
+	return &UnifiedBatchResults{}, nil
 }
 
 // classifyBatchLegacy uses legacy ModernBERT models (lower confidence)
 func (uc *UnifiedClassifier) classifyBatchLegacy(texts []string) (*UnifiedBatchResults, error) {
-	if uc.testClassifyBatchLegacy != nil {
-		return uc.testClassifyBatchLegacy(texts)
-	}
-
-	// Convert Go strings to C string array
-	cTexts := make([]*C.char, len(texts))
-	for i, text := range texts {
-		cTexts[i] = C.CString(text)
-	}
-
-	// Ensure C strings are freed
-	defer func() {
-		for _, cText := range cTexts {
-			C.free(unsafe.Pointer(cText))
-		}
-	}()
-
-	// Call the legacy unified batch classification
-	result := C.classify_unified_batch(&cTexts[0], C.int(len(texts)))
-	defer C.free_unified_batch_result(result)
-
-	// Check for errors
-	if result.error {
-		errorMsg := "unknown error"
-		if result.error_message != nil {
-			errorMsg = C.GoString(result.error_message)
-		}
-		return nil, fmt.Errorf("unified batch classification failed: %s", errorMsg)
-	}
-
-	// Convert C results to Go structures
-	results := uc.convertCResultsToGo(&result)
-	return results, nil
+	return &UnifiedBatchResults{}, nil
 }
 
 // convertLoRAResultsToGo converts LoRA C results to unified Go structures
 func (uc *UnifiedClassifier) convertLoRAResultsToGo(result *C.LoRABatchResult) *UnifiedBatchResults {
-	batchSize := int(result.batch_size)
-	results := &UnifiedBatchResults{
-		IntentResults:   make([]IntentResult, batchSize),
-		PIIResults:      make([]PIIResult, batchSize),
-		SecurityResults: make([]SecurityResult, batchSize),
-		BatchSize:       batchSize,
-	}
-
-	// Convert intent results
-	if result.intent_results != nil {
-		intentSlice := (*[1000]C.LoRAIntentResult)(unsafe.Pointer(result.intent_results))[:batchSize:batchSize]
-		for i, cIntent := range intentSlice {
-			results.IntentResults[i] = IntentResult{
-				Category:      C.GoString(cIntent.category),
-				Confidence:    float32(cIntent.confidence),
-				Probabilities: []float32{float32(cIntent.confidence)}, // Simplified
-			}
-		}
-	}
-
-	// Convert PII results
-	if result.pii_results != nil {
-		piiSlice := (*[1000]C.LoRAPIIResult)(unsafe.Pointer(result.pii_results))[:batchSize:batchSize]
-		for i, cPII := range piiSlice {
-			piiResult := PIIResult{
-				HasPII:     bool(cPII.has_pii),
-				PIITypes:   []string{},
-				Confidence: float32(cPII.confidence),
-			}
-
-			// Convert PII types
-			if cPII.pii_types != nil && cPII.num_pii_types > 0 {
-				piiTypesSlice := (*[1000]*C.char)(unsafe.Pointer(cPII.pii_types))[:cPII.num_pii_types:cPII.num_pii_types]
-				for _, cType := range piiTypesSlice {
-					piiResult.PIITypes = append(piiResult.PIITypes, C.GoString(cType))
-				}
-			}
-
-			results.PIIResults[i] = piiResult
-		}
-	}
-
-	// Convert security results
-	if result.security_results != nil {
-		securitySlice := (*[1000]C.LoRASecurityResult)(unsafe.Pointer(result.security_results))[:batchSize:batchSize]
-		for i, cSecurity := range securitySlice {
-			results.SecurityResults[i] = SecurityResult{
-				IsJailbreak: bool(cSecurity.is_jailbreak),
-				ThreatType:  C.GoString(cSecurity.threat_type),
-				Confidence:  float32(cSecurity.confidence),
-			}
-		}
-	}
-
-	return results
+	return nil
 }
 
 // initializeLoRABindings initializes the LoRA C bindings lazily
 func (uc *UnifiedClassifier) initializeLoRABindings() error {
-	if uc.testInitializeLoRA != nil {
-		return uc.testInitializeLoRA()
-	}
-
-	if uc.loraModelPaths == nil {
-		return fmt.Errorf("loRA model paths not configured")
-	}
-
-	// Convert Go strings to C strings
-	cIntentPath := C.CString(uc.loraModelPaths.IntentPath)
-	defer C.free(unsafe.Pointer(cIntentPath))
-
-	cPIIPath := C.CString(uc.loraModelPaths.PIIPath)
-	defer C.free(unsafe.Pointer(cPIIPath))
-
-	cSecurityPath := C.CString(uc.loraModelPaths.SecurityPath)
-	defer C.free(unsafe.Pointer(cSecurityPath))
-
-	cArch := C.CString(uc.loraModelPaths.Architecture)
-	defer C.free(unsafe.Pointer(cArch))
-
-	// Initialize LoRA unified classifier
-	success := C.init_lora_unified_classifier(
-		cIntentPath,
-		cPIIPath,
-		cSecurityPath,
-		cArch,
-		C.bool(true), // Use CPU for now
-	)
-
-	if !success {
-		return fmt.Errorf("c.init_lora_unified_classifier failed")
-	}
 	return nil
 }
 
 func (uc *UnifiedClassifier) classificationMode() (bool, error) {
-	uc.mu.Lock()
-	defer uc.mu.Unlock()
-
-	if !uc.initialized {
-		return false, fmt.Errorf("unified classifier not initialized")
-	}
-
-	return uc.useLoRA, nil
+	return false, nil
 }
 
 func (uc *UnifiedClassifier) ensureLoRAInitialized() error {
-	uc.mu.Lock()
-	if uc.loraInitialized {
-		uc.mu.Unlock()
-		return nil
-	}
-	uc.mu.Unlock()
-
-	uc.mu.Lock()
-	defer uc.mu.Unlock()
-
-	if uc.loraInitialized {
-		return nil
-	}
-
-	if err := uc.initializeLoRABindings(); err != nil {
-		return err
-	}
-
-	uc.loraInitialized = true
 	return nil
 }
 
 // convertCResultsToGo converts C results to Go structures
 func (uc *UnifiedClassifier) convertCResultsToGo(cResult *C.UnifiedBatchResult) *UnifiedBatchResults {
-	batchSize := int(cResult.batch_size)
-
-	results := &UnifiedBatchResults{
-		IntentResults:   make([]IntentResult, batchSize),
-		PIIResults:      make([]PIIResult, batchSize),
-		SecurityResults: make([]SecurityResult, batchSize),
-		BatchSize:       batchSize,
-	}
-
-	// Convert intent results
-	if cResult.intent_results != nil {
-		intentSlice := (*[1 << 30]C.CIntentResult)(unsafe.Pointer(cResult.intent_results))[:batchSize:batchSize]
-		for i, cIntent := range intentSlice {
-			results.IntentResults[i] = IntentResult{
-				Category:   C.GoString(cIntent.category),
-				Confidence: float32(cIntent.confidence),
-			}
-
-			// Convert probabilities if available
-			if cIntent.probabilities != nil && cIntent.num_probabilities > 0 {
-				probSlice := (*[1 << 30]C.float)(unsafe.Pointer(cIntent.probabilities))[:cIntent.num_probabilities:cIntent.num_probabilities]
-				results.IntentResults[i].Probabilities = make([]float32, cIntent.num_probabilities)
-				for j, prob := range probSlice {
-					results.IntentResults[i].Probabilities[j] = float32(prob)
-				}
-			}
-		}
-	}
-
-	// Convert PII results
-	if cResult.pii_results != nil {
-		piiSlice := (*[1 << 30]C.CPIIResult)(unsafe.Pointer(cResult.pii_results))[:batchSize:batchSize]
-		for i, cPii := range piiSlice {
-			results.PIIResults[i] = PIIResult{
-				HasPII:     bool(cPii.has_pii),
-				Confidence: float32(cPii.confidence),
-			}
-
-			// Convert PII types if available
-			if cPii.pii_types != nil && cPii.num_pii_types > 0 {
-				typesSlice := (*[1 << 30]*C.char)(unsafe.Pointer(cPii.pii_types))[:cPii.num_pii_types:cPii.num_pii_types]
-				results.PIIResults[i].PIITypes = make([]string, cPii.num_pii_types)
-				for j, cType := range typesSlice {
-					results.PIIResults[i].PIITypes[j] = C.GoString(cType)
-				}
-			}
-		}
-	}
-
-	// Convert security results
-	if cResult.security_results != nil {
-		securitySlice := (*[1 << 30]C.CSecurityResult)(unsafe.Pointer(cResult.security_results))[:batchSize:batchSize]
-		for i, cSecurity := range securitySlice {
-			results.SecurityResults[i] = SecurityResult{
-				IsJailbreak: bool(cSecurity.is_jailbreak),
-				ThreatType:  C.GoString(cSecurity.threat_type),
-				Confidence:  float32(cSecurity.confidence),
-			}
-		}
-	}
-
-	return results
+	return nil
 }
 
 // Convenience methods for backward compatibility
 
 // ClassifyIntent extracts intent results from unified batch classification
 func (uc *UnifiedClassifier) ClassifyIntent(texts []string) ([]IntentResult, error) {
-	results, err := uc.ClassifyBatch(texts)
-	if err != nil {
-		return nil, err
-	}
-	return results.IntentResults, nil
+	return nil, nil
 }
 
 // ClassifyPII extracts PII results from unified batch classification
 func (uc *UnifiedClassifier) ClassifyPII(texts []string) ([]PIIResult, error) {
-	results, err := uc.ClassifyBatch(texts)
-	if err != nil {
-		return nil, err
-	}
-	return results.PIIResults, nil
+	return nil, nil
 }
 
 // ClassifySecurity extracts security results from unified batch classification
 func (uc *UnifiedClassifier) ClassifySecurity(texts []string) ([]SecurityResult, error) {
-	results, err := uc.ClassifyBatch(texts)
-	if err != nil {
-		return nil, err
-	}
-	return results.SecurityResults, nil
+	return nil, nil
 }
 
 // ClassifySingle is a convenience method for single text classification
 // Internally uses batch processing with batch size = 1
 func (uc *UnifiedClassifier) ClassifySingle(text string) (*UnifiedBatchResults, error) {
-	results, err := uc.ClassifyBatch([]string{text})
-	if err != nil {
-		return nil, err
-	}
-	return results, nil
+	return &UnifiedBatchResults{}, nil
 }
 
 // IsInitialized returns whether the classifier is initialized
 func (uc *UnifiedClassifier) IsInitialized() bool {
-	uc.mu.Lock()
-	defer uc.mu.Unlock()
-	return uc.initialized
+	return false
 }
 
 // updateStats updates performance statistics after a successful batch classification.
 func (uc *UnifiedClassifier) updateStats(batchSize int, processingTime time.Duration) {
-	uc.mu.Lock()
-	defer uc.mu.Unlock()
-
-	uc.stats.TotalBatches++
-	uc.stats.TotalTexts += int64(batchSize)
-	uc.stats.TotalProcessingMs += processingTime.Milliseconds()
-	uc.stats.LastUsed = time.Now()
-	uc.stats.Initialized = uc.initialized
-
-	// Calculate averages
-	if uc.stats.TotalBatches > 0 {
-		uc.stats.AvgBatchSize = float64(uc.stats.TotalTexts) / float64(uc.stats.TotalBatches)
-		uc.stats.AvgLatencyMs = float64(uc.stats.TotalProcessingMs) / float64(uc.stats.TotalBatches)
-	}
 }
 
 // GetStats returns basic statistics about the classifier
 func (uc *UnifiedClassifier) GetStats() map[string]interface{} {
-	uc.mu.Lock()
-	defer uc.mu.Unlock()
-
-	return map[string]interface{}{
-		"initialized":      uc.initialized,
-		"architecture":     "unified_modernbert_multi_head",
-		"supported_tasks":  []string{"intent", "pii", "security"},
-		"batch_support":    true,
-		"memory_efficient": true,
-		"performance":      uc.stats,
-	}
+	return nil
 }

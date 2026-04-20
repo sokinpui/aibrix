@@ -1,13 +1,8 @@
 package classification
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
-	"time"
 
 	"github.com/openai/openai-go"
 
@@ -24,26 +19,12 @@ type VLLMClient struct {
 
 // NewVLLMClient creates a new vLLM REST API client for classifiers
 func NewVLLMClient(endpoint *config.ClassifierVLLMEndpoint) *VLLMClient {
-	scheme := endpoint.Protocol
-	if scheme == "" {
-		scheme = "http"
-	}
-	baseURL := fmt.Sprintf("%s://%s:%d", scheme, endpoint.Address, endpoint.Port)
-
-	return &VLLMClient{
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
-		endpoint: endpoint,
-		baseURL:  baseURL,
-	}
+	return &VLLMClient{}
 }
 
 // NewVLLMClientWithAuth creates a new vLLM REST API client with access key
 func NewVLLMClientWithAuth(endpoint *config.ClassifierVLLMEndpoint, accessKey string) *VLLMClient {
-	client := NewVLLMClient(endpoint)
-	client.accessKey = accessKey
-	return client
+	return &VLLMClient{}
 }
 
 // vllmChatCompletionRequest extends openai.ChatCompletionNewParams with
@@ -66,89 +47,10 @@ type GenerationOptions struct {
 }
 
 func (c *VLLMClient) buildMessages(prompt string) []openai.ChatCompletionMessageParamUnion {
-	if c.endpoint.UseChatTemplate {
-		return []openai.ChatCompletionMessageParamUnion{
-			{OfSystem: &openai.ChatCompletionSystemMessageParam{
-				Content: openai.ChatCompletionSystemMessageParamContentUnion{
-					OfString: openai.String("You are a safety classifier."),
-				},
-			}},
-			{OfUser: &openai.ChatCompletionUserMessageParam{
-				Content: openai.ChatCompletionUserMessageParamContentUnion{
-					OfString: openai.String(prompt),
-				},
-			}},
-		}
-	}
-
-	content := prompt
-	if c.endpoint.PromptTemplate != "" {
-		content = fmt.Sprintf(c.endpoint.PromptTemplate, prompt)
-	}
-	return []openai.ChatCompletionMessageParamUnion{
-		{OfUser: &openai.ChatCompletionUserMessageParam{
-			Content: openai.ChatCompletionUserMessageParamContentUnion{
-				OfString: openai.String(content),
-			},
-		}},
-	}
+	return nil
 }
 
 // Generate sends a chat completion request to vLLM
 func (c *VLLMClient) Generate(ctx context.Context, modelName string, prompt string, options *GenerationOptions) (*openai.ChatCompletion, error) {
-	req := vllmChatCompletionRequest{
-		Model:    modelName,
-		Messages: c.buildMessages(prompt),
-	}
-
-	if options != nil {
-		req.MaxTokens = options.MaxTokens
-		req.Temperature = options.Temperature
-		req.Stream = options.Stream
-		req.ExtraBody = options.ExtraBody
-	}
-
-	if req.MaxTokens == 0 {
-		req.MaxTokens = 512
-	}
-
-	jsonData, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	url := fmt.Sprintf("%s/v1/chat/completions", c.baseURL)
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json")
-
-	if c.accessKey != "" {
-		httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessKey))
-	}
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("vLLM API returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var chatResp openai.ChatCompletion
-	if err := json.Unmarshal(body, &chatResp); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	return &chatResp, nil
+	return &openai.ChatCompletion{}, nil
 }

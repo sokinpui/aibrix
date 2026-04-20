@@ -1,14 +1,8 @@
 package classification
 
 import (
-	"fmt"
-	"strings"
-	"time"
-
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/observability/metrics"
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/utils/entropy"
-	candle_binding "github.com/vllm-project/semantic-router/candle-binding"
 )
 
 // ModalityClassificationResult holds the result of modality signal classification
@@ -24,328 +18,45 @@ type ModalityClassificationResult struct {
 //   - "keyword":    Configurable keyword matching — requires keywords in config
 //   - "hybrid":     Classifier when available + keyword confirmation/fallback (default)
 func (c *Classifier) classifyModality(text string, detectionConfig *config.ModalityDetectionConfig) ModalityClassificationResult {
-	if text == "" {
-		return ModalityClassificationResult{Modality: "AR", Confidence: 1.0, Method: "default"}
-	}
-
-	method := detectionConfig.GetMethod()
-
-	switch method {
-	case config.ModalityDetectionClassifier:
-		return c.classifyModalityByClassifier(text, detectionConfig)
-	case config.ModalityDetectionKeyword:
-		return c.classifyModalityByKeyword(text, detectionConfig)
-	case config.ModalityDetectionHybrid:
-		return c.classifyModalityHybrid(text, detectionConfig)
-	default:
-		return ModalityClassificationResult{Modality: "AR", Confidence: 0.0, Method: "error/unknown-method"}
-	}
+	return ModalityClassificationResult{}
 }
 
 // classifyModalityByClassifier uses the mmBERT-32K ML classifier exclusively.
 func (c *Classifier) classifyModalityByClassifier(text string, cfg *config.ModalityDetectionConfig) ModalityClassificationResult {
-	result, err := candle_binding.ClassifyMmBert32KModality(text)
-	if err == nil {
-		return ModalityClassificationResult{
-			Modality:   result.Modality,
-			Confidence: result.Confidence,
-			Method:     "classifier",
-		}
-	}
-
-	return ModalityClassificationResult{Modality: "AR", Confidence: 0.0, Method: "classifier/error"}
+	return ModalityClassificationResult{}
 }
 
 // classifyModalityByKeyword uses keyword patterns from config to detect modality.
 func (c *Classifier) classifyModalityByKeyword(text string, cfg *config.ModalityDetectionConfig) ModalityClassificationResult {
-	if cfg == nil || len(cfg.Keywords) == 0 {
-		return ModalityClassificationResult{Modality: "AR", Confidence: 0.5, Method: "keyword/no-config"}
-	}
-
-	lowerContent := strings.ToLower(text)
-
-	// Check if any configured image keyword matches
-	hasImageIntent := false
-	for _, kw := range cfg.Keywords {
-		if strings.Contains(lowerContent, strings.ToLower(kw)) {
-			hasImageIntent = true
-			break
-		}
-	}
-
-	if !hasImageIntent {
-		return ModalityClassificationResult{Modality: "AR", Confidence: 0.8, Method: "keyword"}
-	}
-
-	// Image intent detected — check if it's BOTH using both_keywords from config
-	if len(cfg.BothKeywords) > 0 {
-		for _, kw := range cfg.BothKeywords {
-			if strings.Contains(lowerContent, strings.ToLower(kw)) {
-				return ModalityClassificationResult{Modality: "BOTH", Confidence: 0.75, Method: "keyword"}
-			}
-		}
-	}
-
-	return ModalityClassificationResult{Modality: "DIFFUSION", Confidence: 0.8, Method: "keyword"}
+	return ModalityClassificationResult{}
 }
 
 // classifyModalityHybrid uses the ML classifier as primary, with keyword matching as
 // fallback (when classifier is unavailable) or confirmation (when classifier confidence is low).
 func (c *Classifier) classifyModalityHybrid(text string, cfg *config.ModalityDetectionConfig) ModalityClassificationResult {
-	confThreshold := cfg.GetConfidenceThreshold()
-
-	// Try classifier first
-	classifierResult, err := candle_binding.ClassifyMmBert32KModality(text)
-	if err == nil && classifierResult.Confidence >= confThreshold {
-		return ModalityClassificationResult{
-			Modality:   classifierResult.Modality,
-			Confidence: classifierResult.Confidence,
-			Method:     "hybrid/classifier",
-		}
-	}
-
-	if err == nil {
-		// Classifier available but low confidence - use keyword to confirm/override
-		keywordResult := c.classifyModalityByKeyword(text, cfg)
-
-		if classifierResult.Modality == keywordResult.Modality {
-			return ModalityClassificationResult{
-				Modality:   classifierResult.Modality,
-				Confidence: (classifierResult.Confidence + keywordResult.Confidence) / 2,
-				Method:     "hybrid/agree",
-			}
-		}
-
-		lowerThreshold := confThreshold * cfg.GetLowerThresholdRatio()
-		if classifierResult.Confidence >= lowerThreshold {
-			return ModalityClassificationResult{
-				Modality:   classifierResult.Modality,
-				Confidence: classifierResult.Confidence,
-				Method:     "hybrid/classifier-preferred",
-			}
-		}
-		return ModalityClassificationResult{
-			Modality:   keywordResult.Modality,
-			Confidence: keywordResult.Confidence,
-			Method:     "hybrid/keyword-override",
-		}
-	}
-	// Classifier unavailable - fall back to keyword detection
-	return c.classifyModalityByKeyword(text, cfg)
+	return ModalityClassificationResult{}
 }
 
 // ClassifyCategoryWithEntropy performs category classification with entropy-based reasoning decision
 func (c *Classifier) ClassifyCategoryWithEntropy(text string) (string, float64, entropy.ReasoningDecision, error) {
-	// Try keyword and embedding classifiers first
-	category, confidence, decision, matched, err := c.tryKeywordBasedClassification(text)
-	if err != nil {
-		return "", 0.0, entropy.ReasoningDecision{}, err
-	}
-	if matched {
-		return category, confidence, decision, nil
-	}
-
-	// Try in-tree first if properly configured
-	if c.IsCategoryEnabled() && c.categoryInference != nil {
-		return c.classifyCategoryWithEntropyInTree(text)
-	}
-
-	// If in-tree classifier was initialized but config is now invalid, return specific error
-	if c.categoryInference != nil && !c.IsCategoryEnabled() {
-		return "", 0.0, entropy.ReasoningDecision{}, fmt.Errorf("category classification is not properly configured")
-	}
-
-	// Fall back to MCP
-	if c.IsMCPCategoryEnabled() && c.mcpCategoryInference != nil {
-		return c.classifyCategoryWithEntropyMCP(text)
-	}
-
-	return "", 0.0, entropy.ReasoningDecision{}, fmt.Errorf("no category classification method available")
+	return "", 0.0, entropy.ReasoningDecision{}, nil
 }
 
 // tryKeywordBasedClassification attempts classification via keyword and embedding classifiers.
 // Returns matched=true if a classifier produced a result.
 func (c *Classifier) tryKeywordBasedClassification(text string) (string, float64, entropy.ReasoningDecision, bool, error) {
-	for _, clf := range []interface {
-		Classify(string) (string, float64, error)
-	}{c.keywordClassifier, c.keywordEmbeddingClassifier} {
-		if clf == nil {
-			continue
-		}
-		category, confidence, err := clf.Classify(text)
-		if err != nil {
-			return "", 0.0, entropy.ReasoningDecision{}, false, err
-		}
-		if category != "" {
-			reasoningDecision := c.makeReasoningDecisionForKeywordCategory(category)
-			return category, confidence, reasoningDecision, true, nil
-		}
-	}
 	return "", 0.0, entropy.ReasoningDecision{}, false, nil
 }
 
 // makeReasoningDecisionForKeywordCategory creates a reasoning decision for keyword-matched categories
 func (c *Classifier) makeReasoningDecisionForKeywordCategory(category string) entropy.ReasoningDecision {
-	// Find the decision configuration
-	normalizedCategory := strings.ToLower(strings.TrimSpace(category))
-	useReasoning := false
-
-	for _, decision := range c.Config.Decisions {
-		if strings.ToLower(decision.Name) == normalizedCategory {
-			// Check if the decision has reasoning enabled in its best model
-			if len(decision.ModelRefs) > 0 && decision.ModelRefs[0].UseReasoning != nil {
-				useReasoning = *decision.ModelRefs[0].UseReasoning
-			}
-			break
-		}
-	}
-
-	return entropy.ReasoningDecision{
-		UseReasoning:     useReasoning,
-		Confidence:       1.0, // Keyword matches have 100% confidence
-		DecisionReason:   "keyword_match_category_config",
-		FallbackStrategy: "keyword_based_classification",
-		TopCategories: []entropy.CategoryProbability{
-			{
-				Category:    category,
-				Probability: 1.0,
-			},
-		},
-	}
+	return entropy.ReasoningDecision{}
 }
 
 // classifyCategoryWithEntropyInTree performs category classification with entropy using in-tree model
 func (c *Classifier) classifyCategoryWithEntropyInTree(text string) (string, float64, entropy.ReasoningDecision, error) {
-	if !c.IsCategoryEnabled() {
-		return "", 0.0, entropy.ReasoningDecision{}, fmt.Errorf("category classification is not properly configured")
-	}
-
-	// Get full probability distribution
-	result, err := c.categoryInference.ClassifyWithProbabilities(text)
-	if err != nil {
-		return "", 0.0, entropy.ReasoningDecision{}, fmt.Errorf("classification error: %w", err)
-	}
-
-	// Get category names for all classes and translate to generic names when configured
-	categoryNames := make([]string, len(result.Probabilities))
-	for i := range result.Probabilities {
-		if name, ok := c.CategoryMapping.GetCategoryFromIndex(i); ok {
-			categoryNames[i] = c.translateMMLUToGeneric(name)
-		} else {
-			categoryNames[i] = fmt.Sprintf("unknown_%d", i)
-		}
-	}
-
-	// Build decision reasoning map from configuration
-	// Use the best model's reasoning capability for each decision
-	categoryReasoningMap := make(map[string]bool)
-	for _, decision := range c.Config.Decisions {
-		useReasoning := false
-		if len(decision.ModelRefs) > 0 && decision.ModelRefs[0].UseReasoning != nil {
-			// Use the first (best) model's reasoning capability
-			useReasoning = *decision.ModelRefs[0].UseReasoning
-		}
-		categoryReasoningMap[strings.ToLower(decision.Name)] = useReasoning
-	}
-
-	// Make entropy-based reasoning decision
-	entropyStart := time.Now()
-	reasoningDecision := entropy.MakeEntropyBasedReasoningDecision(
-		result.Probabilities,
-		categoryNames,
-		categoryReasoningMap,
-		float64(c.Config.CategoryModel.Threshold),
-	)
-	entropyLatency := time.Since(entropyStart).Seconds()
-
-	c.recordEntropyMetrics(result.Probabilities, reasoningDecision, entropyLatency)
-
-	// Check confidence threshold for category determination
-	if result.Confidence < c.Config.CategoryModel.Threshold {
-		// Determine fallback category (default to "other" if not configured)
-		fallbackCategory := c.Config.FallbackCategory
-		if fallbackCategory == "" {
-			fallbackCategory = "other"
-		}
-
-		// Record the fallback category as a signal match
-		metrics.RecordSignalMatch(config.SignalTypeKeyword, fallbackCategory)
-
-		// Return fallback category instead of empty string to enable proper decision routing
-		return fallbackCategory, float64(result.Confidence), reasoningDecision, nil
-	}
-
-	// Convert class index to category name and translate to generic
-	categoryName, ok := c.CategoryMapping.GetCategoryFromIndex(result.Class)
-	if !ok {
-		// Determine fallback category (default to "other" if not configured)
-		fallbackCategory := c.Config.FallbackCategory
-		if fallbackCategory == "" {
-			fallbackCategory = "other"
-		}
-
-		metrics.RecordSignalMatch(config.SignalTypeKeyword, fallbackCategory)
-		return fallbackCategory, float64(result.Confidence), reasoningDecision, nil
-	}
-	genericCategory := c.translateMMLUToGeneric(categoryName)
-
-	// Record the category as a signal match
-	metrics.RecordSignalMatch(config.SignalTypeKeyword, genericCategory)
-
-	return genericCategory, float64(result.Confidence), reasoningDecision, nil
+	return "", 0.0, entropy.ReasoningDecision{}, nil
 }
 
 func (c *Classifier) recordEntropyMetrics(probabilities []float32, reasoningDecision entropy.ReasoningDecision, entropyLatency float64) {
-	// Calculate entropy value for metrics
-	entropyValue := entropy.CalculateEntropy(probabilities)
-
-	// Determine top category for metrics
-	topCategory := "none"
-	if len(reasoningDecision.TopCategories) > 0 {
-		topCategory = reasoningDecision.TopCategories[0].Category
-	}
-
-	// Validate probability distribution quality
-	probSum := float32(0.0)
-	for _, prob := range probabilities {
-		probSum += prob
-	}
-
-	// Record probability distribution quality checks
-	if probSum >= 0.99 && probSum <= 1.01 {
-		metrics.RecordProbabilityDistributionQuality("sum_check", "valid")
-	} else {
-		metrics.RecordProbabilityDistributionQuality("sum_check", "invalid")
-	}
-
-	// Check for negative probabilities
-	hasNegative := false
-	for _, prob := range probabilities {
-		if prob < 0 {
-			hasNegative = true
-			break
-		}
-	}
-
-	if hasNegative {
-		metrics.RecordProbabilityDistributionQuality("negative_check", "invalid")
-	} else {
-		metrics.RecordProbabilityDistributionQuality("negative_check", "valid")
-	}
-
-	// Calculate uncertainty level from entropy value
-	entropyResult := entropy.AnalyzeEntropy(probabilities)
-	uncertaintyLevel := entropyResult.UncertaintyLevel
-
-	// Record comprehensive entropy classification metrics
-	metrics.RecordEntropyClassificationMetrics(
-		topCategory,
-		uncertaintyLevel,
-		entropyValue,
-		reasoningDecision.Confidence,
-		reasoningDecision.UseReasoning,
-		reasoningDecision.DecisionReason,
-		topCategory,
-		entropyLatency,
-	)
 }

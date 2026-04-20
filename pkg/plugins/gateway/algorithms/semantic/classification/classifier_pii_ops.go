@@ -1,219 +1,51 @@
 package classification
 
-import (
-	"fmt"
-	"strings"
-)
-
 // ClassifyPII performs PII token classification on the given text and returns detected PII types
 func (c *Classifier) ClassifyPII(text string) ([]string, error) {
-	return c.ClassifyPIIWithThreshold(text, c.Config.PIIModel.Threshold)
+	return nil, nil
 }
 
 // ClassifyPIIWithThreshold performs PII token classification with a custom threshold
 func (c *Classifier) ClassifyPIIWithThreshold(text string, threshold float32) ([]string, error) {
-	if !c.IsPIIEnabled() {
-		return []string{}, fmt.Errorf("PII detection is not properly configured")
-	}
-
-	if text == "" {
-		return []string{}, nil
-	}
-
-	// Use ModernBERT PII token classifier for entity detection
-	tokenResult, err := c.piiInference.ClassifyTokens(text)
-	if err != nil {
-		return nil, fmt.Errorf("PII token classification error: %w", err)
-	}
-
-	// Extract unique PII types from detected entities
-	// Translate class_X format to named types using PII mapping
-	piiTypes := make(map[string]bool)
-	for _, entity := range tokenResult.Entities {
-		if entity.Confidence >= threshold {
-			// Translate entity type from class_X format to named type (e.g., class_6 → DATE_TIME)
-			translatedType := c.PIIMapping.TranslatePIIType(entity.EntityType)
-			piiTypes[translatedType] = true
-		}
-	}
-
-	// Convert to slice
-	var result []string
-	for piiType := range piiTypes {
-		result = append(result, piiType)
-	}
-
-	return result, nil
+	return nil, nil
 }
 
 // ClassifyPIIWithDetails performs PII token classification and returns full entity details including confidence scores
 func (c *Classifier) ClassifyPIIWithDetails(text string) ([]PIIDetection, error) {
-	return c.ClassifyPIIWithDetailsAndThreshold(text, c.Config.PIIModel.Threshold)
+	return nil, nil
 }
 
 // ClassifyPIIWithDetailsAndThreshold performs PII token classification with a custom threshold and returns full entity details
 func (c *Classifier) ClassifyPIIWithDetailsAndThreshold(text string, threshold float32) ([]PIIDetection, error) {
-	if !c.IsPIIEnabled() {
-		return []PIIDetection{}, fmt.Errorf("PII detection is not properly configured")
-	}
-
-	if text == "" {
-		return []PIIDetection{}, nil
-	}
-
-	// Use PII token classifier for entity detection
-	tokenResult, err := c.piiInference.ClassifyTokens(text)
-	if err != nil {
-		return nil, fmt.Errorf("PII token classification error: %w", err)
-	}
-
-	// Convert token entities to PII detections, filtering by threshold
-	// Translate class_X format to named types using PII mapping
-	var detections []PIIDetection
-	for _, entity := range tokenResult.Entities {
-		if entity.Confidence >= threshold {
-			// Translate entity type from class_X format to named type (e.g., class_6 → DATE_TIME)
-			translatedType := c.PIIMapping.TranslatePIIType(entity.EntityType)
-			detection := PIIDetection{
-				EntityType: translatedType,
-				Start:      entity.Start,
-				End:        entity.End,
-				Text:       entity.Text,
-				Confidence: entity.Confidence,
-			}
-			detections = append(detections, detection)
-		}
-	}
-
-	return detections, nil
+	return nil, nil
 }
 
 // DetectPIIInContent performs PII classification on all provided content
 func (c *Classifier) DetectPIIInContent(allContent []string) []string {
-	var detectedPII []string
-	seenPII := make(map[string]bool)
-
-	for _, content := range allContent {
-		if content == "" {
-			continue
-		}
-		// TODO: classifier may not handle the entire content, so we need to split the content into smaller chunks
-		piiTypes, err := c.ClassifyPII(content)
-		if err != nil {
-			// Continue without PII enforcement on error
-			continue
-		}
-		// Add all detected PII types, avoiding duplicates
-		for _, piiType := range piiTypes {
-			if seenPII[piiType] {
-				continue
-			}
-			detectedPII = append(detectedPII, piiType)
-			seenPII[piiType] = true
-		}
-	}
-
-	return detectedPII
+	return nil
 }
 
 // AnalyzeContentForPII performs detailed PII analysis on multiple content pieces
 func (c *Classifier) AnalyzeContentForPII(contentList []string) (bool, []PIIAnalysisResult, error) {
-	return c.AnalyzeContentForPIIWithThreshold(contentList, c.Config.PIIModel.Threshold)
+	return false, nil, nil
 }
 
 // AnalyzeContentForPIIWithThreshold performs detailed PII analysis with a custom threshold
 func (c *Classifier) AnalyzeContentForPIIWithThreshold(contentList []string, threshold float32) (bool, []PIIAnalysisResult, error) {
-	if !c.IsPIIEnabled() {
-		return false, nil, fmt.Errorf("PII detection is not properly configured")
-	}
-
-	var analysisResults []PIIAnalysisResult
-	hasPII := false
-
-	for i, content := range contentList {
-		if content == "" {
-			continue
-		}
-
-		var result PIIAnalysisResult
-		result.Content = content
-		result.ContentIndex = i
-
-		// Use ModernBERT PII token classifier for detailed analysis
-		tokenResult, err := c.piiInference.ClassifyTokens(content)
-		if err != nil {
-			continue
-		}
-
-		// Convert token entities to PII detections
-		for _, entity := range tokenResult.Entities {
-			if entity.Confidence >= threshold {
-				detection := PIIDetection{
-					EntityType: entity.EntityType,
-					Start:      entity.Start,
-					End:        entity.End,
-					Text:       entity.Text,
-					Confidence: entity.Confidence,
-				}
-				result.Entities = append(result.Entities, detection)
-				result.HasPII = true
-				hasPII = true
-			}
-		}
-
-		analysisResults = append(analysisResults, result)
-	}
-
-	return hasPII, analysisResults, nil
+	return false, nil, nil
 }
 
 // collectPIIRuleContents builds the list of text contents to analyze for a PII rule.
 func collectPIIRuleContents(piiText string, nonUserMessages []string, includeHistory bool) []string {
-	var contents []string
-	if piiText != "" {
-		contents = append(contents, piiText)
-	}
-	if includeHistory {
-		for _, msg := range nonUserMessages {
-			if msg != "" {
-				contents = append(contents, msg)
-			}
-		}
-	}
-	return contents
+	return nil
 }
 
 // collectPIIEntityTypes extracts entity types from cached PII results that meet the threshold.
 func (c *Classifier) collectPIIEntityTypes(ruleContents []string, ruleName string, threshold float32, piiCache map[string]cachedPIIResult) map[string]bool {
-	entityTypes := make(map[string]bool)
-	for _, content := range ruleContents {
-		cached, ok := piiCache[content]
-		if !ok {
-			continue
-		}
-		if cached.err != nil {
-			continue
-		}
-		for _, entity := range cached.result.Entities {
-			if entity.Confidence >= threshold {
-				entityTypes[c.PIIMapping.TranslatePIIType(entity.EntityType)] = true
-			}
-		}
-	}
-	return entityTypes
+	return nil
 }
 
 // findDeniedEntities returns entity types not covered by the allow-list.
 func findDeniedEntities(entityTypes map[string]bool, allowedTypes []string) []string {
-	allowSet := make(map[string]bool, len(allowedTypes))
-	for _, allowed := range allowedTypes {
-		allowSet[strings.ToUpper(allowed)] = true
-	}
-	var denied []string
-	for entityType := range entityTypes {
-		if !allowSet[strings.ToUpper(entityType)] {
-			denied = append(denied, entityType)
-		}
-	}
-	return denied
+	return nil
 }

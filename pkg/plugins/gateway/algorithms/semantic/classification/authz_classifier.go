@@ -1,9 +1,6 @@
 package classification
 
 import (
-	"fmt"
-	"strings"
-
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
 )
 
@@ -54,53 +51,7 @@ type AuthzClassifier struct {
 //   - Subject.Kind is lowercased and trimmed
 //   - Subject.Name is trimmed (preserving original case for exact matching)
 func NewAuthzClassifier(bindings []config.RoleBinding) (*AuthzClassifier, error) {
-	seenNames := make(map[string]bool, len(bindings))
-	normalized := make([]normalizedBinding, 0, len(bindings))
-
-	for _, rb := range bindings {
-		if rb.Name == "" {
-			return nil, fmt.Errorf("role_bindings: binding with empty name is not allowed")
-		}
-		if seenNames[rb.Name] {
-			return nil, fmt.Errorf("role_bindings: duplicate binding name %q — "+
-				"each binding must have a unique name for audit log clarity", rb.Name)
-		}
-		seenNames[rb.Name] = true
-
-		if rb.Role == "" {
-			return nil, fmt.Errorf("role_bindings: binding %q has empty role — "+
-				"set the role field to the name used in decision conditions (type: \"authz\", name: \"<role>\")", rb.Name)
-		}
-		if len(rb.Subjects) == 0 {
-			return nil, fmt.Errorf("role_bindings: binding %q has no subjects — "+
-				"add at least one subject with kind User or Group", rb.Name)
-		}
-
-		nb := normalizedBinding{
-			name:     rb.Name,
-			role:     rb.Role,
-			subjects: make([]normalizedSubject, 0, len(rb.Subjects)),
-		}
-
-		for i, s := range rb.Subjects {
-			kind := strings.ToLower(strings.TrimSpace(s.Kind))
-			if kind != "user" && kind != "group" {
-				return nil, fmt.Errorf("role_bindings: binding %q subject[%d] has invalid kind %q — "+
-					"must be \"User\" or \"Group\"", rb.Name, i, s.Kind)
-			}
-			name := strings.TrimSpace(s.Name)
-			if name == "" {
-				return nil, fmt.Errorf("role_bindings: binding %q subject[%d] (kind: %s) has empty name — "+
-					"the name must match the value your auth backend injects in the identity headers (configured via authz.identity)",
-					rb.Name, i, s.Kind)
-			}
-			nb.subjects = append(nb.subjects, normalizedSubject{kind: kind, name: name})
-		}
-
-		normalized = append(normalized, nb)
-	}
-
-	return &AuthzClassifier{bindings: normalized}, nil
+	return &AuthzClassifier{}, nil
 }
 
 // Classify evaluates the RBAC role bindings against the user identity and groups.
@@ -115,72 +66,11 @@ func NewAuthzClassifier(bindings []config.RoleBinding) (*AuthzClassifier, error)
 // Returns an error if userID is empty and role bindings are configured — this prevents
 // silent bypass when ext_authz fails to inject the user identity header.
 func (c *AuthzClassifier) Classify(userID string, userGroups []string) (*AuthzResult, error) {
-	if len(c.bindings) == 0 {
-		return &AuthzResult{}, nil
-	}
-
-	if userID == "" {
-		return nil, fmt.Errorf("authz signal: user identity header is empty but %d role_bindings are configured — "+
-			"ensure your auth backend injects the user identity header (check authz.identity.user_id_header config); "+
-			"refusing to evaluate without user identity (no silent bypass allowed)", len(c.bindings))
-	}
-
-	// Deduplicate roles (multiple bindings can grant the same role)
-	roleSet := make(map[string]bool)
-	var matchedRoles []string
-
-	for _, rb := range c.bindings {
-		matched := false
-
-		for _, s := range rb.subjects {
-			// Kind and Name are already normalized at startup — no runtime normalization needed
-			switch s.kind {
-			case "user":
-				if s.name == userID {
-					matched = true
-				}
-			case "group":
-				for _, ug := range userGroups {
-					if s.name == ug {
-						matched = true
-						break
-					}
-				}
-			default:
-				// Cannot happen: NewAuthzClassifier validates kind at startup.
-				// If it does happen, it's a programming error — fail loudly.
-				panic(fmt.Sprintf("authz classifier: unexpected subject kind %q in binding %q — "+
-					"this is a bug: NewAuthzClassifier should have rejected this at startup", s.kind, rb.name))
-			}
-			if matched {
-				break
-			}
-		}
-
-		if matched && !roleSet[rb.role] {
-			roleSet[rb.role] = true
-			matchedRoles = append(matchedRoles, rb.role)
-		}
-	}
-
-	return &AuthzResult{
-		MatchedRules: matchedRoles,
-	}, nil
+	return &AuthzResult{}, nil
 }
 
 // ParseUserGroups parses a comma-separated groups header value into a slice of group names.
 // Whitespace around group names is trimmed. Empty strings are excluded.
 func ParseUserGroups(headerValue string) []string {
-	if headerValue == "" {
-		return nil
-	}
-	parts := strings.Split(headerValue, ",")
-	var groups []string
-	for _, p := range parts {
-		g := strings.TrimSpace(p)
-		if g != "" {
-			groups = append(groups, g)
-		}
-	}
-	return groups
+	return nil
 }

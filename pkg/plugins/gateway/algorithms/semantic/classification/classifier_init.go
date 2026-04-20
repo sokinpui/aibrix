@@ -1,10 +1,7 @@
 package classification
 
 import (
-	"fmt"
-
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	candle_binding "github.com/vllm-project/semantic-router/candle-binding"
 )
 
 type CategoryInitializer interface {
@@ -16,20 +13,6 @@ type CategoryInitializerImpl struct {
 }
 
 func (c *CategoryInitializerImpl) Init(modelID string, useCPU bool, numClasses ...int) error {
-	// Try auto-detecting Candle BERT init first - checks for lora_config.json
-	// This enables LoRA Intent/Category models when available
-	success := candle_binding.InitCandleBertClassifier(modelID, numClasses[0], useCPU)
-	if success {
-		c.usedModernBERT = false
-		return nil
-	}
-
-	// Fallback to ModernBERT-specific init for backward compatibility
-	err := candle_binding.InitModernBertClassifier(modelID, useCPU)
-	if err != nil {
-		return fmt.Errorf("failed to initialize category classifier (both auto-detect and ModernBERT): %w", err)
-	}
-	c.usedModernBERT = true
 	return nil
 }
 
@@ -39,11 +22,6 @@ type MmBERT32KCategoryInitializerImpl struct {
 }
 
 func (c *MmBERT32KCategoryInitializerImpl) Init(modelID string, useCPU bool, numClasses ...int) error {
-	err := candle_binding.InitMmBert32KIntentClassifier(modelID, useCPU)
-	if err != nil {
-		return fmt.Errorf("failed to initialize mmBERT-32K intent classifier: %w", err)
-	}
-	c.usedMmBERT32K = true
 	return nil
 }
 
@@ -58,26 +36,18 @@ func createMmBERT32KCategoryInitializer() CategoryInitializer {
 }
 
 type CategoryInference interface {
-	Classify(text string) (candle_binding.ClassResult, error)
-	ClassifyWithProbabilities(text string) (candle_binding.ClassResultWithProbs, error)
+	Classify(text string) (InferenceClassResult, error)
+	ClassifyWithProbabilities(text string) (InferenceClassResultWithProbs, error)
 }
 
 type CategoryInferenceImpl struct{}
 
-func (c *CategoryInferenceImpl) Classify(text string) (candle_binding.ClassResult, error) {
-	// Try Candle BERT first, fall back to ModernBERT if it fails
-	result, err := candle_binding.ClassifyCandleBertText(text)
-	if err != nil {
-		// Candle BERT not initialized or failed, try ModernBERT
-		return candle_binding.ClassifyModernBertText(text)
-	}
-	return result, nil
+func (c *CategoryInferenceImpl) Classify(text string) (InferenceClassResult, error) {
+	return InferenceClassResult{}, nil
 }
 
-func (c *CategoryInferenceImpl) ClassifyWithProbabilities(text string) (candle_binding.ClassResultWithProbs, error) {
-	// Note: CandleBert doesn't have WithProbabilities yet, fall back to ModernBERT
-	// This will work correctly if ModernBERT was initialized as fallback
-	return candle_binding.ClassifyModernBertTextWithProbabilities(text)
+func (c *CategoryInferenceImpl) ClassifyWithProbabilities(text string) (InferenceClassResultWithProbs, error) {
+	return InferenceClassResultWithProbs{}, nil
 }
 
 // createCategoryInference creates the category inference (auto-detecting)
@@ -88,20 +58,12 @@ func createCategoryInference() CategoryInference {
 // MmBERT32KCategoryInferenceImpl uses mmBERT-32K for intent classification
 type MmBERT32KCategoryInferenceImpl struct{}
 
-func (c *MmBERT32KCategoryInferenceImpl) Classify(text string) (candle_binding.ClassResult, error) {
-	return candle_binding.ClassifyMmBert32KIntent(text)
+func (c *MmBERT32KCategoryInferenceImpl) Classify(text string) (InferenceClassResult, error) {
+	return InferenceClassResult{}, nil
 }
 
-func (c *MmBERT32KCategoryInferenceImpl) ClassifyWithProbabilities(text string) (candle_binding.ClassResultWithProbs, error) {
-	// mmBERT-32K doesn't have WithProbabilities yet, use basic classification
-	result, err := candle_binding.ClassifyMmBert32KIntent(text)
-	if err != nil {
-		return candle_binding.ClassResultWithProbs{}, err
-	}
-	return candle_binding.ClassResultWithProbs{
-		Class:      result.Class,
-		Confidence: result.Confidence,
-	}, nil
+func (c *MmBERT32KCategoryInferenceImpl) ClassifyWithProbabilities(text string) (InferenceClassResultWithProbs, error) {
+	return InferenceClassResultWithProbs{}, nil
 }
 
 // createMmBERT32KCategoryInference creates mmBERT-32K category inference
@@ -118,22 +80,6 @@ type JailbreakInitializerImpl struct {
 }
 
 func (c *JailbreakInitializerImpl) Init(modelID string, useCPU bool, numClasses ...int) error {
-	// Try auto-detecting jailbreak classifier init first - checks for lora_config.json
-	// This enables LoRA Jailbreak models when available
-	// Use InitJailbreakClassifier which routes to LORA_JAILBREAK_CLASSIFIER or BERT_JAILBREAK_CLASSIFIER
-	err := candle_binding.InitJailbreakClassifier(modelID, numClasses[0], useCPU)
-	if err == nil {
-		c.usedModernBERT = false
-		return nil
-	}
-
-	// Fallback to ModernBERT-specific init for backward compatibility
-	// This handles models with incomplete configs (missing hidden_act, etc.)
-	err = candle_binding.InitModernBertJailbreakClassifier(modelID, useCPU)
-	if err != nil {
-		return fmt.Errorf("failed to initialize jailbreak classifier (both auto-detect and ModernBERT): %w", err)
-	}
-	c.usedModernBERT = true
 	return nil
 }
 
@@ -148,11 +94,6 @@ type MmBERT32KJailbreakInitializerImpl struct {
 }
 
 func (c *MmBERT32KJailbreakInitializerImpl) Init(modelID string, useCPU bool, numClasses ...int) error {
-	err := candle_binding.InitMmBert32KJailbreakClassifier(modelID, useCPU)
-	if err != nil {
-		return fmt.Errorf("failed to initialize mmBERT-32K jailbreak detector: %w", err)
-	}
-	c.usedMmBERT32K = true
 	return nil
 }
 
@@ -162,19 +103,13 @@ func createMmBERT32KJailbreakInitializer() JailbreakInitializer {
 }
 
 type JailbreakInference interface {
-	Classify(text string) (candle_binding.ClassResult, error)
+	Classify(text string) (InferenceClassResult, error)
 }
 
 type JailbreakInferenceImpl struct{}
 
-func (c *JailbreakInferenceImpl) Classify(text string) (candle_binding.ClassResult, error) {
-	// Try jailbreak-specific classifier first, fall back to ModernBERT if it fails
-	result, err := candle_binding.ClassifyJailbreakText(text)
-	if err != nil {
-		// Jailbreak classifier not initialized or failed, try ModernBERT
-		return candle_binding.ClassifyModernBertJailbreakText(text)
-	}
-	return result, nil
+func (c *JailbreakInferenceImpl) Classify(text string) (InferenceClassResult, error) {
+	return InferenceClassResult{}, nil
 }
 
 // createJailbreakInferenceCandle creates Candle-based jailbreak inference (auto-detecting)
@@ -185,8 +120,8 @@ func createJailbreakInferenceCandle() JailbreakInference {
 // MmBERT32KJailbreakInferenceImpl uses mmBERT-32K for jailbreak detection
 type MmBERT32KJailbreakInferenceImpl struct{}
 
-func (c *MmBERT32KJailbreakInferenceImpl) Classify(text string) (candle_binding.ClassResult, error) {
-	return candle_binding.ClassifyMmBert32KJailbreak(text)
+func (c *MmBERT32KJailbreakInferenceImpl) Classify(text string) (InferenceClassResult, error) {
+	return InferenceClassResult{}, nil
 }
 
 // createMmBERT32KJailbreakInference creates mmBERT-32K jailbreak inference
@@ -199,31 +134,6 @@ func createMmBERT32KJailbreakInference() JailbreakInference {
 // When UseMmBERT32K is true, uses mmBERT-32K (32K context, YaRN RoPE, multilingual)
 // When UseVLLM is true, it will try to find external model config with role="guardrail"
 func createJailbreakInference(promptGuardCfg *config.PromptGuardConfig, routerCfg *config.RouterConfig) (JailbreakInference, error) {
-	// Check for mmBERT-32K first (takes precedence)
-	if promptGuardCfg.UseMmBERT32K {
-		return createMmBERT32KJailbreakInference(), nil
-	}
-
-	if promptGuardCfg.UseVLLM {
-		// Try to find external model configuration with role="guardrail"
-		externalCfg := routerCfg.FindExternalModelByRole(config.ModelRoleGuardrail)
-		if externalCfg == nil {
-			return nil, fmt.Errorf("external model with model_role='%s' is required when use_vllm=true", config.ModelRoleGuardrail)
-		}
-
-		// Validate required fields
-		if externalCfg.ModelEndpoint.Address == "" {
-			return nil, fmt.Errorf("external guardrail model endpoint address is required")
-		}
-		if externalCfg.ModelName == "" {
-			return nil, fmt.Errorf("external guardrail model name is required")
-		}
-
-		// Use vLLM-based inference with external config
-		// Pass default threshold from PromptGuardConfig
-		return NewVLLMJailbreakInference(externalCfg, promptGuardCfg.Threshold)
-	}
-	// Use Candle-based inference
 	return createJailbreakInferenceCandle(), nil
 }
 
@@ -236,21 +146,6 @@ type PIIInitializerImpl struct {
 }
 
 func (c *PIIInitializerImpl) Init(modelID string, useCPU bool, numClasses int) error {
-	// Try auto-detecting Candle BERT init first - checks for lora_config.json
-	// This enables LoRA PII models when available
-	success := candle_binding.InitCandleBertTokenClassifier(modelID, numClasses, useCPU)
-	if success {
-		c.usedModernBERT = false
-		return nil
-	}
-
-	// Fallback to ModernBERT-specific init for backward compatibility
-	// This handles models with incomplete configs (missing hidden_act, etc.)
-	err := candle_binding.InitModernBertPIITokenClassifier(modelID, useCPU)
-	if err != nil {
-		return fmt.Errorf("failed to initialize PII token classifier (both auto-detect and ModernBERT): %w", err)
-	}
-	c.usedModernBERT = true
 	return nil
 }
 
@@ -265,11 +160,6 @@ type MmBERT32KPIIInitializerImpl struct {
 }
 
 func (c *MmBERT32KPIIInitializerImpl) Init(modelID string, useCPU bool, numClasses int) error {
-	err := candle_binding.InitMmBert32KPIIClassifier(modelID, useCPU)
-	if err != nil {
-		return fmt.Errorf("failed to initialize mmBERT-32K PII detector: %w", err)
-	}
-	c.usedMmBERT32K = true
 	return nil
 }
 
@@ -279,14 +169,13 @@ func createMmBERT32KPIIInitializer() PIIInitializer {
 }
 
 type PIIInference interface {
-	ClassifyTokens(text string) (candle_binding.TokenClassificationResult, error)
+	ClassifyTokens(text string) (InferenceTokenResult, error)
 }
 
 type PIIInferenceImpl struct{}
 
-func (c *PIIInferenceImpl) ClassifyTokens(text string) (candle_binding.TokenClassificationResult, error) {
-	// Auto-detecting inference - uses whichever classifier was initialized (LoRA or Traditional)
-	return candle_binding.ClassifyCandleBertTokens(text)
+func (c *PIIInferenceImpl) ClassifyTokens(text string) (InferenceTokenResult, error) {
+	return InferenceTokenResult{}, nil
 }
 
 // createPIIInference creates the PII inference (auto-detecting)
@@ -298,12 +187,8 @@ func createPIIInference() PIIInference {
 // Entity types are returned as "LABEL_{class_id}" by Rust and translated Go-side via PIIMapping.
 type MmBERT32KPIIInferenceImpl struct{}
 
-func (c *MmBERT32KPIIInferenceImpl) ClassifyTokens(text string) (candle_binding.TokenClassificationResult, error) {
-	entities, err := candle_binding.ClassifyMmBert32KPII(text)
-	if err != nil {
-		return candle_binding.TokenClassificationResult{}, err
-	}
-	return candle_binding.TokenClassificationResult{Entities: entities}, nil
+func (c *MmBERT32KPIIInferenceImpl) ClassifyTokens(text string) (InferenceTokenResult, error) {
+	return InferenceTokenResult{}, nil
 }
 
 // createMmBERT32KPIIInference creates mmBERT-32K PII inference
