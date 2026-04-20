@@ -13,7 +13,7 @@ var (
 )
 
 type Selector interface {
-	Select(decision *Decision, pods []*v1.Pod) (*v1.Pod, error)
+	Select(decision string, pods []*v1.Pod) (*v1.Pod, error)
 }
 
 type labelSelector struct {
@@ -26,21 +26,12 @@ func NewLabelSelector(labelKey string) Selector {
 	}
 }
 
-func (s *labelSelector) Select(decision *Decision, pods []*v1.Pod) (*v1.Pod, error) {
+func (s *labelSelector) Select(decision string, pods []*v1.Pod) (*v1.Pod, error) {
 	if len(pods) == 0 {
 		return nil, ErrNoPodsAvailable
 	}
 
-	if decision == nil || decision.RouteLabel == "" {
-		return pods[rand.Intn(len(pods))], nil
-	}
-
 	var matched []*v1.Pod
-	for _, pod := range pods {
-		if pod.Labels != nil && pod.Labels[s.labelKey] == decision.RouteLabel {
-			matched = append(matched, pod)
-		}
-	}
 
 	if len(matched) == 0 {
 		return nil, ErrNoPodsMatched

@@ -48,7 +48,7 @@ func (r *semanticRouter) Route(ctx *types.RoutingContext, readyPodList types.Pod
 		"model", reqModel,
 		"prompt_length", len(reqPrompt))
 
-	targetPod, err := r.selector.Select(nil, pods)
+	targetPod, err := r.selector.Select("", pods)
 	if err != nil {
 		return r.fallback(ctx, pods)
 	}
