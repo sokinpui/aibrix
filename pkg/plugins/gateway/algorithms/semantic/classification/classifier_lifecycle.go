@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/modelruntime"
 )
 
 // BuildClassifier creates a classifier without executing runtime initialization.
@@ -65,27 +64,34 @@ func (c *Classifier) InitializeRuntime() error {
 		return nil
 	}
 
-	_, err := modelruntime.Execute(context.Background(), tasks, modelruntime.Options{
-		MaxParallelism: modelruntime.DefaultParallelism(len(tasks)),
-	})
-	if err != nil {
-		return err
+	for _, task := range tasks {
+		if err := task.Run(context.Background()); err != nil {
+			if task.BestEffort {
+				continue
+			}
+			return fmt.Errorf("failed to initialize %s: %w", task.Name, err)
+		}
 	}
+
 	return nil
 }
 
-func (c *Classifier) runtimeTasks() []modelruntime.Task {
-	tasks := make([]modelruntime.Task, 0, 9)
+type runtimeTask struct {
+	Name       string
+	BestEffort bool
+	Run        func(context.Context) error
+}
+
+func (c *Classifier) runtimeTasks() []runtimeTask {
+	tasks := make([]runtimeTask, 0, 9)
 	appendTask := func(name string, bestEffort bool, enabled bool, init func() error) {
 		if !enabled {
 			return
 		}
-		tasks = append(tasks, modelruntime.Task{
+		tasks = append(tasks, runtimeTask{
 			Name:       name,
 			BestEffort: bestEffort,
-			Run: func(context.Context) error {
-				return init()
-			},
+			Run:        func(context.Context) error { return init() },
 		})
 	}
 

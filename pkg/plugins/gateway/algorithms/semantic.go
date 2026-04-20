@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 
+	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic"
 	"github.com/vllm-project/aibrix/pkg/types"
 	"github.com/vllm-project/aibrix/pkg/utils"
 	v1 "k8s.io/api/core/v1"
@@ -19,10 +20,15 @@ func init() {
 	Register(RouterSemantic, NewSemanticRouter)
 }
 
-type semanticRouter struct{}
+type semanticRouter struct {
+	selector semantic.Selector
+}
 
 func NewSemanticRouter() (types.Router, error) {
-	return &semanticRouter{}, nil
+	// In a real scenario, these would be loaded from configuration
+	return &semanticRouter{
+		selector: semantic.NewLabelSelector(SemanticRouteLabel),
+	}, nil
 }
 
 func (r *semanticRouter) Route(ctx *types.RoutingContext, readyPodList types.PodList) (string, error) {
@@ -42,7 +48,13 @@ func (r *semanticRouter) Route(ctx *types.RoutingContext, readyPodList types.Pod
 		"model", reqModel,
 		"prompt_length", len(reqPrompt))
 
-	return r.fallback(ctx, pods)
+	targetPod, err := r.selector.Select(nil, pods)
+	if err != nil {
+		return r.fallback(ctx, pods)
+	}
+
+	ctx.SetTargetPod(targetPod)
+	return ctx.TargetAddress(), nil
 }
 
 func (r *semanticRouter) fallback(ctx *types.RoutingContext, pods []*v1.Pod) (string, error) {

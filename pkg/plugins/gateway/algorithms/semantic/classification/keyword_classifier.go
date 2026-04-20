@@ -7,7 +7,6 @@ import (
 	"unicode"
 
 	"github.com/vllm-project/aibrix/pkg/plugins/gateway/algorithms/semantic/config"
-	nlp_binding "github.com/vllm-project/semantic-router/nlp-binding"
 )
 
 // preppedKeywordRule stores preprocessed keywords for efficient regex matching.
@@ -26,14 +25,8 @@ type preppedKeywordRule struct {
 }
 
 // KeywordClassifier implements keyword-based classification logic.
-// It supports three matching methods per rule: regex (default), bm25, and ngram.
-// BM25 and N-gram rules are dispatched to Rust-backed classifiers via nlp-binding.
 type KeywordClassifier struct {
 	regexRules []preppedKeywordRule // Regex-based rules (original behavior)
-
-	// Rust-backed classifiers via nlp-binding FFI
-	bm25Classifier  *nlp_binding.BM25Classifier
-	ngramClassifier *nlp_binding.NgramClassifier
 
 	// Track which rules use which method for ordered evaluation
 	ruleOrder []ruleRef
@@ -54,8 +47,6 @@ type ruleMatch struct {
 }
 
 // NewKeywordClassifier creates a new KeywordClassifier.
-// Rules with method "bm25" or "ngram" are dispatched to Rust-backed classifiers;
-// all others (including default/empty method) use the original regex engine.
 func NewKeywordClassifier(cfgRules []config.KeywordRule) (*KeywordClassifier, error) {
 	return &KeywordClassifier{}, nil
 }
@@ -76,7 +67,6 @@ func regexPatterns(keyword string, useExplicitRegex bool) (string, string) {
 // Classify performs keyword-based classification on the given text.
 // Returns category, confidence (0.0-1.0), and error.
 // For regex: confidence = 0.5 + (matchCount / totalKeywords * 0.5)
-// For BM25/N-gram: confidence derived from match scores
 func (c *KeywordClassifier) Classify(text string) (string, float64, error) {
 	return "", 0.0, nil
 }
@@ -94,7 +84,6 @@ func (c *KeywordClassifier) ClassifyWithKeywords(text string) (string, []string,
 // - error: any error that occurred
 //
 // Rules are evaluated in the order they were defined in the config (first-match semantics),
-// regardless of method. Each rule is dispatched to its respective engine.
 func (c *KeywordClassifier) ClassifyWithKeywordsAndCount(text string) (string, []string, int, int, error) {
 	return "", nil, 0, 0, nil
 }
