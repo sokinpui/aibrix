@@ -75,6 +75,12 @@ const (
 	// HeaderMockPDFailure is a test-only header forwarded to mock PD backends.
 	HeaderMockPDFailure = "x-aibrix-mock-fail"
 
+	// Semantic Router Headers
+	HeaderVSRSelectedModel    = "x-vsr-selected-model"
+	HeaderAIBrixTargetModel   = "x-aibrix-target-model"
+	HeaderAIBrixRoutingIntent = "x-aibrix-routing-intent"
+	HeaderEffectiveModel      = "x-aibrix-effective-model"
+
 	// RPM & TPM Update Errors
 	HeaderUpdateTPM        = "x-update-tpm"
 	HeaderUpdateRPM        = "x-update-rpm"

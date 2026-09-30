@@ -742,6 +742,129 @@ func Test_handleRequestBody(t *testing.T) {
 	}
 }
 
+func TestSemanticHeader_ModelOverrideSuccess(t *testing.T) {
+	mockCache := &MockCache{Cache: cache.NewForTest()}
+	mockRouter := new(mockRouter)
+	registerTestRouter(mockRouter)
+
+	mathPod1 := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "pod-math-1", Namespace: "default"},
+		Status: v1.PodStatus{
+			PodIP:      "10.0.0.1",
+			Conditions: []v1.PodCondition{{Type: v1.PodReady, Status: v1.ConditionTrue}},
+		},
+	}
+	mathPod2 := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "pod-math-2", Namespace: "default"},
+		Status: v1.PodStatus{
+			PodIP:      "10.0.0.2",
+			Conditions: []v1.PodCondition{{Type: v1.PodReady, Status: v1.ConditionTrue}},
+		},
+	}
+	podList := &utils.PodArray{Pods: []*v1.Pod{mathPod1, mathPod2}}
+
+	mockCache.On("HasModel", "qwen-math").Return(true)
+	mockCache.On("ListPodsByModel", "qwen-math").Return(podList, nil)
+	mockCache.On("AddRequestCount", mock.Anything, mock.Anything, "qwen-math").Return(int64(1))
+	mockCache.On("GetMetricValueByPod", mock.Anything, mock.Anything, mock.Anything).
+		Return(&metrics.SimpleMetricValue{Value: 0}, nil).Maybe()
+	mockRouter.On("Route", mock.Anything, mock.Anything).Return("10.0.0.1:8000", nil).Once()
+
+	server := &Server{cache: mockCache}
+
+	req := &extProcPb.ProcessingRequest{
+		Request: &extProcPb.ProcessingRequest_RequestBody{
+			RequestBody: &extProcPb.HttpBody{
+				Body: []byte(`{"model":"general-router","messages":[{"role":"user","content":"calculate 1+1"}]}`),
+			},
+		},
+	}
+
+	routingCtx := types.NewRoutingContext(context.Background(), "", "", "", "test-request-id", "test-user")
+	routingCtx.ReqPath = PathChatCompletions
+	routingCtx.ReqHeaders[HeaderAIBrixTargetModel] = "qwen-math"
+	routingCtx.ReqHeaders[HeaderRoutingStrategy] = string(TestRouterAlgorithm)
+
+	resp, effectiveModel, stream, term := server.HandleRequestBody(context.Background(), routingCtx, "test-request-id", req, utils.User{Name: "test-user"})
+
+	require.NotNil(t, resp)
+	require.Nil(t, resp.GetImmediateResponse())
+	assert.Equal(t, "qwen-math", effectiveModel)
+	assert.Equal(t, "qwen-math", routingCtx.Model)
+	assert.Contains(t, string(routingCtx.ReqBody), `"model":"qwen-math"`)
+	assert.NotContains(t, string(routingCtx.ReqBody), "general-router")
+	assert.Contains(t, string(resp.GetRequestBody().GetResponse().GetBodyMutation().GetBody()), `"model":"qwen-math"`)
+	assert.False(t, stream)
+	assert.Equal(t, int64(1), term)
+	mockCache.AssertCalled(t, "ListPodsByModel", "qwen-math")
+	mockRouter.AssertExpectations(t)
+}
+
+func TestSemanticHeader_FallbackOnUnknownModel(t *testing.T) {
+	mockCache := &MockCache{Cache: cache.NewForTest()}
+	mockRouter := new(mockRouter)
+	registerTestRouter(mockRouter)
+
+	generalPod1 := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "pod-general-1", Namespace: "default"},
+		Status: v1.PodStatus{
+			PodIP:      "10.0.0.2",
+			Conditions: []v1.PodCondition{{Type: v1.PodReady, Status: v1.ConditionTrue}},
+		},
+	}
+	generalPod2 := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "pod-general-2", Namespace: "default"},
+		Status: v1.PodStatus{
+			PodIP:      "10.0.0.3",
+			Conditions: []v1.PodCondition{{Type: v1.PodReady, Status: v1.ConditionTrue}},
+		},
+	}
+	podList := &utils.PodArray{Pods: []*v1.Pod{generalPod1, generalPod2}}
+
+	mockCache.On("HasModel", "ghost-model").Return(false)
+	mockCache.On("HasModel", "general-router").Return(true)
+	mockCache.On("ListPodsByModel", "general-router").Return(podList, nil)
+	mockCache.On("AddRequestCount", mock.Anything, mock.Anything, "general-router").Return(int64(1))
+	mockCache.On("GetMetricValueByPod", mock.Anything, mock.Anything, mock.Anything).
+		Return(&metrics.SimpleMetricValue{Value: 0}, nil).Maybe()
+	mockRouter.On("Route", mock.Anything, mock.Anything).Return("10.0.0.2:8000", nil).Once()
+
+	server := &Server{cache: mockCache}
+
+	req := &extProcPb.ProcessingRequest{
+		Request: &extProcPb.ProcessingRequest_RequestBody{
+			RequestBody: &extProcPb.HttpBody{
+				Body: []byte(`{"model":"general-router","messages":[{"role":"user","content":"hello"}]}`),
+			},
+		},
+	}
+
+	routingCtx := types.NewRoutingContext(context.Background(), "", "", "", "test-request-id", "test-user")
+	routingCtx.ReqPath = PathChatCompletions
+	routingCtx.ReqHeaders[HeaderAIBrixTargetModel] = "ghost-model"
+	routingCtx.ReqHeaders[HeaderRoutingStrategy] = string(TestRouterAlgorithm)
+
+	resp, effectiveModel, stream, term := server.HandleRequestBody(context.Background(), routingCtx, "test-request-id", req, utils.User{Name: "test-user"})
+
+	require.NotNil(t, resp)
+	require.Nil(t, resp.GetImmediateResponse())
+	assert.Equal(t, "general-router", effectiveModel)
+	assert.Equal(t, "general-router", routingCtx.Model)
+	assert.False(t, stream)
+	assert.Equal(t, int64(1), term)
+	mockCache.AssertCalled(t, "ListPodsByModel", "general-router")
+	mockRouter.AssertExpectations(t)
+}
+
+func TestRewriteBodyModel(t *testing.T) {
+	input := []byte(`{"model":"virtual-mom","messages":[{"role":"user","content":"hello"}],"temperature":0.7}`)
+	mutated := rewriteBodyModel(input, "qwen-coder")
+	assert.Contains(t, string(mutated), `"model":"qwen-coder"`)
+	assert.NotContains(t, string(mutated), "virtual-mom")
+	assert.Contains(t, string(mutated), `"content":"hello"`)
+	assert.Empty(t, rewriteBodyModel(nil, "target"))
+}
+
 func TestValidateModelAvailabilityReturnsRetryableResponseForSleepingModelClaim(t *testing.T) {
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "warm-1", Namespace: "default"},

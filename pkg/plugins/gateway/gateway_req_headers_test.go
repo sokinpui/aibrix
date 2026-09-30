@@ -437,6 +437,52 @@ func TestHandleRequestHeaders_PrefersRootSpanTraceIDOverTraceparent(t *testing.T
 	}
 }
 
+func TestSemanticHeader_Extraction(t *testing.T) {
+	server := &Server{}
+
+	t.Run("extract x-vsr-selected-model", func(t *testing.T) {
+		req := &extProcPb.ProcessingRequest{
+			Request: &extProcPb.ProcessingRequest_RequestHeaders{
+				RequestHeaders: &extProcPb.HttpHeaders{
+					Headers: &configPb.HeaderMap{Headers: []*configPb.HeaderValue{
+						{Key: pathKey, RawValue: []byte(PathChatCompletions)},
+						{Key: HeaderVSRSelectedModel, RawValue: []byte("qwen-math")},
+						{Key: HeaderAIBrixRoutingIntent, RawValue: []byte("math")},
+					}},
+				},
+			},
+		}
+
+		rootSpan := trace.SpanFromContext(context.Background())
+		resp, _, _, routingCtx, _ := server.HandleRequestHeaders(context.Background(), "test-request-id", rootSpan, req)
+
+		require.NotNil(t, resp)
+		require.NotNil(t, routingCtx)
+		assert.Equal(t, "qwen-math", routingCtx.ReqHeaders[HeaderAIBrixTargetModel])
+		assert.Equal(t, "math", routingCtx.ReqHeaders[HeaderAIBrixRoutingIntent])
+	})
+
+	t.Run("extract x-aibrix-target-model", func(t *testing.T) {
+		req := &extProcPb.ProcessingRequest{
+			Request: &extProcPb.ProcessingRequest_RequestHeaders{
+				RequestHeaders: &extProcPb.HttpHeaders{
+					Headers: &configPb.HeaderMap{Headers: []*configPb.HeaderValue{
+						{Key: pathKey, RawValue: []byte(PathChatCompletions)},
+						{Key: HeaderAIBrixTargetModel, RawValue: []byte("qwen-coder")},
+					}},
+				},
+			},
+		}
+
+		rootSpan := trace.SpanFromContext(context.Background())
+		resp, _, _, routingCtx, _ := server.HandleRequestHeaders(context.Background(), "test-request-id", rootSpan, req)
+
+		require.NotNil(t, resp)
+		require.NotNil(t, routingCtx)
+		assert.Equal(t, "qwen-coder", routingCtx.ReqHeaders[HeaderAIBrixTargetModel])
+	})
+}
+
 // TestHandleRequestHeaders_PriorityTierIsTrimmed pins where the tier value is
 // normalized: the tier lookup only lowercases, so the whitespace a caller pads
 // the header with has to be gone by the time the value reaches the routing

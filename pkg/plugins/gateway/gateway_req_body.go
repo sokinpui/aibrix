@@ -18,12 +18,14 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/bytedance/sonic"
 	configPb "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	extProcPb "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	envoyTypePb "github.com/envoyproxy/go-control-plane/envoy/type/v3"
@@ -80,11 +82,16 @@ func (s *Server) HandleRequestBody(ctx context.Context, routingCtx *types.Routin
 		}
 	}
 
+	originalModel := model
+	model = s.resolveEffectiveModel(requestID, model, routingCtx)
 	routingCtx.Model = model
 	routingCtx.Message = message
 	routingCtx.PrefixMatchText = prefixText
 	routingCtx.Stream = stream
 	routingCtx.ReqBody = body.RequestBody.GetBody()
+	if model != originalModel && !isMultipartFormPath(requestPath) {
+		routingCtx.ReqBody = rewriteBodyModel(routingCtx.ReqBody, model)
+	}
 	if base, ok := s.cache.ModelBaseModel(model); ok {
 		routingCtx.BaseModel = base
 	}
@@ -252,6 +259,63 @@ func (s *Server) HandleRequestBody(ctx context.Context, routingCtx *types.Routin
 	// never sets ext_proc's allow_mode_override, so a per-request override here
 	// would be silently ignored and would only read as if it did something.
 	return resp, model, stream, term
+}
+
+func (s *Server) resolveEffectiveModel(requestID, bodyModel string, routingCtx *types.RoutingContext) string {
+	if routingCtx == nil || routingCtx.ReqHeaders == nil {
+		return bodyModel
+	}
+	targetModel := strings.TrimSpace(routingCtx.ReqHeaders[HeaderAIBrixTargetModel])
+	if targetModel == "" || targetModel == bodyModel {
+		return bodyModel
+	}
+	if s.isModelKnown(targetModel) {
+		klog.V(4).InfoS("semantic router model override applied", "request_id", requestID, "original_model", bodyModel, "target_model", targetModel)
+		return targetModel
+	}
+	klog.Warningf("semantic target model %q requested but not found in cache; falling back to original model %q for request %s",
+		targetModel, bodyModel, requestID)
+	return bodyModel
+}
+
+func (s *Server) isModelKnown(model string) bool {
+	if s.cache == nil {
+		return false
+	}
+	if s.cache.HasModel(model) {
+		return true
+	}
+	if provider, ok := s.cache.(cache.ModelClaimBindingProvider); ok {
+		if _, _, _, found := provider.ModelClaimBinding(model); found {
+			return true
+		}
+	}
+	if provider, ok := s.cache.(cache.ModelClaimStatusProvider); ok {
+		if _, _, found := provider.ModelClaimStatus(model); found {
+			return true
+		}
+	}
+	return false
+}
+
+func rewriteBodyModel(body []byte, newModel string) []byte {
+	if len(body) == 0 {
+		return body
+	}
+	var raw map[string]json.RawMessage
+	if err := sonic.Unmarshal(body, &raw); err != nil {
+		return body
+	}
+	modelBytes, err := sonic.Marshal(newModel)
+	if err != nil {
+		return body
+	}
+	raw["model"] = modelBytes
+	mutated, err := sonic.Marshal(raw)
+	if err != nil {
+		return body
+	}
+	return mutated
 }
 
 func buildTargetSelectionErrorResponse(routingCtx *types.RoutingContext, requestID, model string, err error) *extProcPb.ProcessingResponse {

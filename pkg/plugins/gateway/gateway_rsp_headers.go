@@ -46,6 +46,14 @@ func (s *Server) HandleResponseHeaders(ctx context.Context, routerCtx *types.Rou
 			HeaderTargetPod, routerCtx.TargetPod().Name,
 			HeaderTargetPodIP, routerCtx.TargetAddress())
 	}
+	if routerCtx != nil && routerCtx.Model != "" && !suppressRoutingDiagnostics {
+		if routerCtx.ReqHeaders[HeaderAIBrixTargetModel] != "" {
+			headers = buildEnvoyProxyHeaders(headers, HeaderEffectiveModel, routerCtx.Model)
+		}
+		if intent := routerCtx.ReqHeaders[HeaderAIBrixRoutingIntent]; intent != "" {
+			headers = buildEnvoyProxyHeaders(headers, HeaderAIBrixRoutingIntent, intent)
+		}
+	}
 
 	if routerCtx != nil && routerCtx.RespHeaders != nil {
 		for key, value := range routerCtx.RespHeaders {
@@ -113,7 +121,7 @@ func (s *Server) HandleResponseHeaders(ctx context.Context, routerCtx *types.Rou
 
 func isRoutingDiagnosticHeader(key string) bool {
 	switch strings.ToLower(key) {
-	case HeaderRoutingStrategy, HeaderTargetPod, HeaderTargetPodIP, HeaderAIBrixConfigProfile:
+	case HeaderRoutingStrategy, HeaderTargetPod, HeaderTargetPodIP, HeaderAIBrixConfigProfile, HeaderEffectiveModel, HeaderAIBrixRoutingIntent:
 		return true
 	default:
 		return false

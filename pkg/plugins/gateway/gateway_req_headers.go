@@ -89,6 +89,16 @@ func (s *Server) HandleRequestHeaders(ctx context.Context, requestID string, roo
 			reqHeaders[HeaderPriorityTier] = strings.TrimSpace(string(n.RawValue))
 		case HeaderConfigProfile:
 			reqConfigProfile = strings.TrimSpace(string(n.RawValue))
+		case HeaderVSRSelectedModel:
+			val := strings.TrimSpace(string(n.RawValue))
+			reqHeaders[HeaderVSRSelectedModel] = val
+			if reqHeaders[HeaderAIBrixTargetModel] == "" {
+				reqHeaders[HeaderAIBrixTargetModel] = val
+			}
+		case HeaderAIBrixTargetModel:
+			reqHeaders[HeaderAIBrixTargetModel] = strings.TrimSpace(string(n.RawValue))
+		case HeaderAIBrixRoutingIntent:
+			reqHeaders[HeaderAIBrixRoutingIntent] = strings.TrimSpace(string(n.RawValue))
 		case constants.HeaderSessionID:
 			reqHeaders[constants.HeaderSessionID] = string(n.RawValue)
 		case constants.HeaderSessionKey, HeaderMockPDFailure:
