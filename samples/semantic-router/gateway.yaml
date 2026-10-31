@@ -1,0 +1,92 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: eg
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: aibrix-eg
+  namespace: aibrix-system
+spec:
+  gatewayClassName: eg
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: client-connection-buffersize
+  namespace: aibrix-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: aibrix-eg
+  connection:
+    bufferLimit: 4194304
+---
+# 核心：AIBrix 基于 target-pod 请求头直连目标 Pod IP 的集群与路由 Patch
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyPatchPolicy
+metadata:
+  name: aibrix-original-dst-patch
+  namespace: aibrix-system
+spec:
+  type: JSONPatch
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: aibrix-eg
+  jsonPatches:
+  # 1. 注册 original_destination_cluster，根据 target-pod 头的 IP 转发
+  - type: type.googleapis.com/envoy.config.cluster.v3.Cluster
+    name: envoy-patch-policy-override2
+    operation:
+      op: add
+      path: ""
+      value:
+        name: original_destination_cluster
+        type: ORIGINAL_DST
+        original_dst_lb_config:
+          use_http_header: true
+          http_header_name: "target-pod"
+        connect_timeout: 6s
+        lb_policy: CLUSTER_PROVIDED
+        dns_lookup_family: V4_ONLY
+  # 2. 匹配带 routing-strategy 头的请求并走直连 Pod 逻辑
+  - type: type.googleapis.com/envoy.config.route.v3.RouteConfiguration
+    name: "aibrix-system/aibrix-eg/http"
+    operation:
+      op: add
+      path: "/virtual_hosts/0/routes/0"
+      value:
+        name: original_route
+        match:
+          prefix: "/"
+          headers:
+          - name: "routing-strategy"
+            string_match:
+              safe_regex:
+                regex: .*
+        route:
+          cluster: original_destination_cluster
+          timeout: 600s
+        typed_per_filter_config:
+          "envoy.filters.http.ext_proc/envoyextensionpolicy/aibrix-system/aibrix-gateway-plugins-extension-policy/extproc/0":
+            "@type": "type.googleapis.com/envoy.config.route.v3.FilterConfig"
+            "config": {}
+  # 3. 保持 Envoy Request ID
+  - type: type.googleapis.com/envoy.config.listener.v3.Listener
+    name: aibrix-system/aibrix-eg/http
+    operation:
+      op: add
+      path: /default_filter_chain/filters/0/typed_config/preserve_external_request_id
+      value: false

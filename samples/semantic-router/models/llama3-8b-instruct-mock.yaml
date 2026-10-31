@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llama3-8b-instruct
+  namespace: default
+  labels:
+    model.aibrix.ai/name: llama3-8b-instruct
+    model.aibrix.ai/port: "8000"
+    model.aibrix.ai/kv-events-enabled: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      model.aibrix.ai/name: llama3-8b-instruct
+  template:
+    metadata:
+      labels:
+        model.aibrix.ai/name: llama3-8b-instruct
+        model.aibrix.ai/port: "8000"
+        model.aibrix.ai/kv-events-enabled: "true"
+      annotations:
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8000"
+        prometheus.io/scrape: "true"
+    spec:
+      containers:
+        - name: vllm-openai
+          image: aibrix/vllm-mock:nightly
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+              name: serve
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: serve
+              scheme: HTTP
+            failureThreshold: 5
+            periodSeconds: 5
+            successThreshold: 1
+            timeoutSeconds: 2
+          resources:
+            limits:
+              cpu: "2"
+              memory: "2G"
+            requests:
+              cpu: "200m"
+              memory: "256M"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llama3-8b-instruct
+  namespace: default
+  labels:
+    model.aibrix.ai/name: llama3-8b-instruct
+    prometheus-discovery: "true"
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+spec:
+  ports:
+    - name: serve
+      port: 8000
+      protocol: TCP
+      targetPort: 8000
+  selector:
+    model.aibrix.ai/name: llama3-8b-instruct
+  type: ClusterIP

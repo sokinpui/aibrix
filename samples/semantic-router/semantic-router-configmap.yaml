@@ -84,7 +84,7 @@ data:
       stores:
         memory:
           embedding_model: mmbert
-        semantic_cache:
+        response_cache:
           backend_type: memory
           embedding_model: mmbert
           enabled: true
@@ -97,22 +97,14 @@ data:
     listeners: []
     providers:
       defaults:
-        default_model: llama3-8b-instruct
-        default_reasoning_effort: high
-        reasoning_families:
-          deepseek:
-            parameter: thinking
-            type: chat_template_kwargs
-          gpt:
-            parameter: reasoning_effort
-            type: reasoning_effort
-          gpt-oss:
-            parameter: reasoning_effort
-            type: reasoning_effort
-          qwen3:
-            parameter: enable_thinking
-            type: chat_template_kwargs
+        model: llama3-8b-instruct
+        reasoning_effort: high
       models:
+      - backend_refs:
+        - endpoint: qwen3-8b.default.svc.cluster.local:8000
+          name: aibrix-vllm
+          weight: 1
+        name: MoM
       - backend_refs:
         - endpoint: llama3-8b-instruct.default.svc.cluster.local:8000
           name: aibrix-vllm
@@ -123,7 +115,8 @@ data:
           name: aibrix-vllm
           weight: 1
         name: qwen3-8b
-        reasoning_family: qwen3
+        reasoning:
+          family: qwen3
     routing:
       decisions:
       # Overlap note: "business" and "economics" both route to llama3-8b-instruct at
@@ -185,7 +178,7 @@ data:
         - configuration:
             enabled: true
             similarity_threshold: 0.92
-          type: semantic-cache
+          type: response_cache
         - configuration:
             enabled: true
             mode: replace
@@ -270,7 +263,7 @@ data:
         - configuration:
             enabled: true
             similarity_threshold: 0.75
-          type: semantic-cache
+          type: response_cache
         - configuration:
             enabled: true
             mode: replace
@@ -292,7 +285,7 @@ data:
         - configuration:
             enabled: true
             similarity_threshold: 0.95
-          type: semantic-cache
+          type: response_cache
         - configuration:
             enabled: true
             mode: replace
@@ -457,6 +450,7 @@ data:
             type: keyword
           operator: OR
       modelCards:
+      - name: MoM
       - loras:
         - description: 'Specialized for science domains: biology, chemistry, physics,
             health, engineering'

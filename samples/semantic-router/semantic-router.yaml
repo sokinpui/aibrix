@@ -147,6 +147,7 @@ spec:
       containers:
       - name: semantic-router
         image: ghcr.io/vllm-project/semantic-router/extproc:latest
+        workingDir: /app
         imagePullPolicy: IfNotPresent
         # --secure=false disables TLS on the gRPC ext_proc connection.
         # Acceptable for this sample (traffic stays in-cluster), but enable
@@ -189,6 +190,8 @@ spec:
           readOnly: true
         - name: models-volume
           mountPath: /app/models
+        - name: models-volume
+          mountPath: /models
         # Startup probe for slow-starting containers (model loading takes ~60s with Gemma)
         startupProbe:
           tcpSocket:
@@ -223,5 +226,5 @@ spec:
           name: semantic-router-config
       - name: models-volume
         hostPath:
-          path: /data01/models
+          path: /Users/so/.cache/vllm-models
           type: DirectoryOrCreate
